@@ -1,5 +1,5 @@
-use tauri::Manager;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::Manager;
 use tauri_plugin_global_shortcut::ShortcutState;
 
 #[tauri::command]
@@ -38,23 +38,41 @@ fn search_entries(query: String) -> Vec<PasswordEntry> {
         .into_iter()
         .filter(|entry| {
             entry.title.to_lowercase().contains(&query.to_lowercase())
-                || entry.username.to_lowercase().contains(&query.to_lowercase())
+                || entry
+                    .username
+                    .to_lowercase()
+                    .contains(&query.to_lowercase())
         })
         .collect()
 }
 
 #[tauri::command]
-async fn copy_password(entry_id: u32) -> Result<(), String> {
+async fn copy_password(entry_id: u32, app_handle: tauri::AppHandle) -> Result<(), String> {
     // Mock password copy - replace with actual encrypted password retrieval
     let mock_password = format!("SecurePass{}", entry_id);
-    println!("Would copy password for entry {}: {}", entry_id, mock_password);
+    println!(
+        "Would copy password for entry {}: {}",
+        entry_id, mock_password
+    );
+
+    // Hide the window after copying
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.hide();
+    }
+
     Ok(())
 }
 
 #[tauri::command]
-async fn copy_username(username: String) -> Result<(), String> {
+async fn copy_username(username: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     // Similar to copy_password, this will use the clipboard plugin
     println!("Would copy username: {}", username);
+
+    // Hide the window after copying
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.hide();
+    }
+
     Ok(())
 }
 
@@ -119,13 +137,26 @@ pub fn run() {
                 app.global_shortcut().register(shortcut)?;
             }
 
-            // Hide window on startup
+            // Configure main window to not show in taskbar
             #[cfg(desktop)]
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.hide();
             }
 
             Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Focused(focused) => {
+                // hide window whenever it loses focus
+                if !focused {
+                    window.hide().unwrap();
+                }
+            }
+            // tauri::WindowEvent::CloseRequested { .. } => {
+            //     // Prevent window from closing - just hide it
+            //     event.window().hide().unwrap();
+            // }
+            _ => {}
         })
         .on_tray_icon_event(|app, event| {
             #[cfg(desktop)]
