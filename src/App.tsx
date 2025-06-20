@@ -234,15 +234,18 @@ function App() {
   };
 
   const handleDelete = async (id: number) => {
-    if (window.confirm('Are you sure you want to delete this entry?')) {
-      try {
-        await invoke('delete_entry', { id });
-        showNotification('Password entry deleted');
-        setQuery(''); // Trigger refresh
-      } catch (error) {
-        console.error('Failed to delete entry:', error);
-        showNotification('Failed to delete entry', 'error');
-      }
+    try {
+      // Perform the backend deletion
+      await invoke('delete_entry', { id });
+      showNotification('Password entry deleted');
+
+      // Explicitly refetch the entries
+      const results = await invoke<PasswordEntry[]>('search_entries', { query: '' });
+      setEntries(results);
+      setSelectedIndex(0);
+    } catch (error) {
+      console.error('Failed to delete entry:', error);
+      showNotification('Failed to delete entry', 'error');
     }
   };
 
