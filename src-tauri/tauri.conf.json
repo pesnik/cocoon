@@ -12,7 +12,14 @@
   "app": {
     "windows": [
       {
-        "decorations": false
+        "label": "main",
+        "decorations": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "focus": false,
+        "resizable": false,
+        "fullscreen": false,
+        "visible": false
       }
     ],
     "security": {
