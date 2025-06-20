@@ -3,7 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
+use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_clipboard_manager::ClipboardExt;
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::ShortcutState;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -203,6 +205,10 @@ async fn copy_username(username: String, app_handle: tauri::AppHandle) -> Result
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        )) // Initialize autostart plugin
         .setup(|app| {
             // Create tray icon
             #[cfg(desktop)]
@@ -218,14 +224,12 @@ pub fn run() {
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
-                // Define shortcut: Command+Alt+C for macOS, Ctrl+Shift+C for others
                 let shortcut = if cfg!(target_os = "macos") {
                     Shortcut::new(Some(Modifiers::SUPER | Modifiers::ALT), Code::KeyC)
                 } else {
                     Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyC)
                 };
 
-                // Register global shortcut plugin with handler
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |_app, received_shortcut, event| {
@@ -238,16 +242,13 @@ pub fn run() {
                                             let _ = window.center();
                                         }
                                     }
-                                    ShortcutState::Released => {
-                                        // Optionally handle release event
-                                    }
+                                    ShortcutState::Released => {}
                                 }
                             }
                         })
                         .build(),
                 )?;
 
-                // Register the shortcut
                 app.global_shortcut().register(shortcut)?;
             }
 
@@ -257,11 +258,22 @@ pub fn run() {
                 let _ = window.hide();
             }
 
+            // Enable autostart on application startup
+            #[cfg(desktop)]
+            {
+                let autostart_manager = app.autolaunch();
+                if !autostart_manager.is_enabled().unwrap_or(false) {
+                    autostart_manager
+                        .enable()
+                        .expect("Failed to enable autostart");
+                    println!("Autostart enabled successfully.");
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Focused(focused) => {
-                // hide window whenever it loses focus
                 if !focused {
                     window.hide().unwrap();
                 }
