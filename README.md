@@ -4,90 +4,257 @@
 
 -----
 
-Cocoon is a secure, Rust-powered password manager designed for speed and convenience on your Windows machine. Inspired by the natural world's most protective enclosures, Cocoon keeps your digital credentials safely enfolded, accessible with just a quick keystroke whenever you need them.
+Cocoon is a secure, cross-platform password manager built with Rust, designed for speed and convenience. Inspired by the natural world's most protective enclosures, Cocoon keeps your digital credentials safely enfolded, accessible whenever you need them.
 
 ## Why Cocoon?
 
-In today's digital landscape, strong, unique passwords are your first line of defense. But remembering them all is impossible, and typing them out is tedious. Cocoon offers a solution that balances ironclad security with unparalleled ease of use, all built with the performance and safety guarantees of **Rust**.
+In today's digital landscape, strong, unique passwords are your first line of defense. But remembering them all is impossible, and typing them out is tedious. Cocoon offers a solution that balances ironclad security with ease of use, all built with the performance and safety guarantees of **Rust**.
 
 -----
 
-## Key Features (Planned & In Progress)
+## Current Status
 
-  * **Quick Access Hotkey:** Just like `Win + V` for your clipboard history, a customizable global hotkey brings up Cocoon's intuitive search interface instantly. Find and copy your credentials in seconds.
-  * **Robust Encryption:** Your passwords are encrypted using industry-standard, battle-tested algorithms (e.g., AES-256 GCM) and strong Key Derivation Functions (e.g., Argon2), ensuring your data remains private and secure.
-  * **Intuitive Search:** Start typing, and Cocoon will quickly filter your entries, making it effortless to find what you're looking for.
-  * **Secure Clipboard Management:** Passwords copied to your clipboard are automatically cleared after a short, configurable delay, preventing sensitive data from lingering.
-  * **Cross-Platform (Future Goal):** While initially focused on Windows, Cocoon is being built with future expansion to other operating systems in mind.
-  * **Open Source:** Transparency is key to security. Cocoon's source code will be openly available for review, audit, and community contributions.
+🎉 **MVP Available**: Cocoon is now running successfully on both **Windows** and **macOS** with core password management functionality.
 
------
+**What's Working:**
+- ✅ Secure password storage and retrieval with JSON persistence
+- ✅ Cross-platform compatibility (Windows & macOS)
+- ✅ **Global hotkey for quick access** (`Ctrl+Shift+C` on Windows, `Cmd+Alt+C` on macOS)
+- ✅ **System tray integration** with click-to-show functionality
+- ✅ **Auto-hide on focus loss** for enhanced security
+- ✅ **Clipboard integration** for one-click password/username copying
+- ✅ **Auto-start on system boot** capability
+- ✅ Fast search and filtering across all password entries
+- ✅ Full CRUD operations (Create, Read, Update, Delete) for password entries
 
-## Screenshots
-
-Get a glimpse of Cocoon’s intuitive interface:
-
-| **Search Interface** | **Add New Entry** | **Edit Entry** |
-|--------------------|------------------|---------------|
-| ![Search Interface](screenshots/search.png) | ![Add New Entry](screenshots/add.png) | ![Edit Entry](screenshots/add.png) |
-| Quickly search and copy credentials with a hotkey. | Add new passwords with a clean, simple form. | Edit existing entries with ease. |
-
-*Note: Screenshots reflect the current development version and may change in future releases.*
-
------
-
-## Getting Started (Coming Soon)
-
-Cocoon is currently under active development. Once the first stable release is available, you'll find detailed instructions here on how to download, install, and configure your personal password Cocoon.
-
-### Planned Installation Steps:
-
-1.  **Download:** Grab the latest `Cocoon.exe` installer for Windows from our [Releases page](https://www.google.com/search?q=link-to-your-releases-page-here).
-2.  **Installation:** Run the installer and follow the simple setup wizard.
-3.  **Setup Master Password:** On first launch, you'll be prompted to set your secure master password – the single key to unlock your Cocoon.
-4.  **Configure Hotkey:** Customize the global hotkey that will summon Cocoon's quick search interface.
-5.  **Start Adding Passwords:** Begin securely storing your usernames, passwords, URLs, and notes.
+**Coming Soon:**
+- 🔄 Secure clipboard auto-clear after copying
+- 🔄 Strong encryption for stored data (currently plain JSON)
+- 🔄 Password generator with customizable options
+- 🔄 Import/export functionality
+- 🔄 Master password authentication
 
 -----
 
-## Building from Source
+## Key Features
 
-For developers and those who prefer to build from source, you'll need the Rust toolchain installed.
+### ✅ Current Features
+- **Global Hotkey Access**: Quick access via `Ctrl+Shift+C` (Windows) or `Cmd+Alt+C` (macOS)
+- **System Tray Integration**: Minimizes to system tray, click to show/hide
+- **Smart Search**: Real-time filtering across titles, usernames, and URLs
+- **One-Click Copy**: Copy passwords and usernames directly to clipboard
+- **Auto-Hide Security**: Window automatically hides when focus is lost
+- **Auto-Start**: Launches automatically when your system starts
+- **Cross-Platform**: Native support for Windows and macOS
+- **Fast & Lightweight**: Built with Rust and Tauri for optimal performance
+- **Local Storage**: Your data stays on your machine in a local JSON file
+- **Open Source**: Fully transparent codebase for security auditing
 
+### 🚧 Planned Features
+- **Strong Encryption**: Upgrade from JSON to encrypted storage with master password
+- **Secure Clipboard**: Auto-clearing clipboard after copying passwords
+- **Password Generator**: Create strong, unique passwords with customizable rules
+- **Import Tools**: Migrate from other password managers (1Password, LastPass, etc.)
+- **Data Backup**: Secure backup and restore functionality
+- **Linux Support**: Expand to complete cross-platform coverage
+- **Browser Extensions**: Direct integration with web browsers
+
+-----
+
+## Getting Started
+
+### Prerequisites
+- Windows 10+ or macOS 10.14+
+- No additional dependencies required
+
+### Installation
+
+#### Option 1: Download Release (Recommended)
+1. Visit our [Releases page](https://github.com/pesnik/cocoon/releases)
+2. Download the appropriate binary for your platform:
+   - `cocoon-windows.exe` for Windows
+   - `cocoon-macos` for macOS
+3. Run the application and set up your master password
+
+#### Option 2: Build from Source
 ```bash
 # Clone the repository
 git clone https://github.com/pesnik/cocoon.git
 cd cocoon
 
-# Build the project (release mode for optimized binaries)
+# Build for your platform
 cargo build --release
 
-# The executable will be in target/release/cocoon.exe (on Windows)
+# Run the application
+# Windows: target/release/cocoon.exe
+# macOS: target/release/cocoon
 ```
+
+### First Time Setup
+1. **Launch Cocoon** - The app will start minimized to your system tray
+2. **Access via Hotkey**: Press `Ctrl+Shift+C` (Windows) or `Cmd+Alt+C` (macOS) to open
+3. **Add Your First Password**: Click "Add New Entry" to start building your vault
+4. **Quick Access**: Use the hotkey anytime to search and copy your passwords
+
+### Daily Usage
+- **Open Cocoon**: Use the global hotkey or click the system tray icon
+- **Search**: Start typing to filter your password entries
+- **Copy Credentials**: Click the copy buttons to get passwords/usernames to your clipboard
+- **Auto-Hide**: The window automatically hides when you click elsewhere for security
 
 -----
 
-## Contribute
+## Usage
 
-Cocoon is an open-source project, and we welcome contributions\! Whether it's reporting bugs, suggesting features, or submitting code, your help makes Cocoon better.
+### Usage
 
-Please see our [CONTRIBUTING.md](https://www.google.com/search?q=link-to-your-contributing-guidelines) for more details.
+**Opening Cocoon:**
+- **Global Hotkey**: `Ctrl+Shift+C` (Windows) or `Cmd+Alt+C` (macOS)
+- **System Tray**: Click the Cocoon icon in your system tray
+- **Auto-Start**: Cocoon launches automatically when your system starts
+
+**Managing Passwords:**
+1. **Add New Entry**: Fill in website, username, password, and optional notes
+2. **Search & Filter**: Type to instantly filter entries by title, username, or URL
+3. **Copy Credentials**: One-click copy for passwords and usernames
+4. **Edit/Delete**: Modify or remove entries as needed
+
+**Security Features:**
+- **Auto-Hide**: Window hides automatically when you click elsewhere
+- **Local Storage**: All data stored locally in `~/.local/share/cocoon-password-manager/` (Linux/macOS) or `%APPDATA%/cocoon-password-manager/` (Windows)
+- **No Network Access**: Your passwords never leave your device
+
+-----
+
+## Screenshots
+
+Get a glimpse of Cocoon's intuitive interface:
+
+| **Main Interface** | **Add New Entry** | **Search & Filter** |
+|-------------------|-------------------|-------------------|
+| ![Main Interface](screenshots/main.png) | ![Add New Entry](screenshots/add.png) | ![Search](screenshots/search.png) |
+| Your secure password vault | Simple form for new credentials | Quick search and filtering |
+
+*Screenshots reflect the current MVP version and may evolve with future updates.*
+
+-----
+
+## Development
+
+### Building from Source
+
+Ensure you have Rust installed (visit [rustup.rs](https://rustup.rs/) for installation instructions).
+
+```bash
+# Clone and build
+git clone https://github.com/pesnik/cocoon.git
+cd cocoon
+cargo build --release
+
+# Run tests
+cargo test
+
+# Run in development mode
+cargo run
+```
+
+### Platform-Specific Notes
+
+**Windows:**
+- Builds require Windows 10 SDK
+- Executable will be in `target/release/cocoon.exe`
+
+**macOS:**
+- Requires Xcode command line tools
+- Binary will be in `target/release/cocoon`
+- May need to allow in Security & Privacy settings
+
+-----
+
+## Roadmap
+
+### v1.0 (Current MVP) ✅
+- [x] Password storage and retrieval with local JSON persistence
+- [x] Cross-platform support (Windows & macOS)
+- [x] Global hotkey access (`Ctrl+Shift+C` / `Cmd+Alt+C`)
+- [x] System tray integration with click-to-show
+- [x] Auto-hide on focus loss for security
+- [x] One-click clipboard copying for passwords/usernames
+- [x] Real-time search and filtering
+- [x] Auto-start capability
+- [x] Full CRUD operations for password entries
+
+### v1.1 (Security & UX Improvements)
+- [ ] **Strong encryption** - Replace JSON with encrypted storage
+- [ ] **Master password authentication** - Secure access to your vault
+- [ ] **Secure clipboard management** - Auto-clear clipboard after copying
+- [ ] **Password strength indicator** - Visual feedback on password security
+- [ ] **Backup/restore functionality** - Secure data backup options
+
+### v1.2 (Advanced Features)
+- [ ] **Password generator** - Create strong passwords with custom rules
+- [ ] **Import/export tools** - Migrate from other password managers
+- [ ] **Categories and tags** - Better organization for large password collections
+- [ ] **Password history** - Track password changes over time
+- [ ] **Secure notes** - Store sensitive information beyond passwords
+
+-----
+
+## Contributing
+
+Cocoon is open source and welcomes contributions! Whether you're reporting bugs, suggesting features, or submitting code, your help makes Cocoon better.
+
+**Ways to Contribute:**
+- 🐛 Report bugs via [GitHub Issues](https://github.com/pesnik/cocoon/issues)
+- 💡 Suggest features or improvements
+- 🔧 Submit pull requests
+- 📖 Improve documentation
+- 🔐 Security audits and reviews
+
+Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+-----
+
+## Security
+
+**Current Security Features:**
+- **Local-Only Storage**: Your passwords never leave your device
+- **Memory-Safe Implementation**: Built with Rust to prevent common security vulnerabilities
+- **Auto-Hide Protection**: Window automatically hides when focus is lost
+- **No Network Access**: Cocoon operates entirely offline
+
+**Important Security Note:** 
+The current MVP stores passwords in a local JSON file for rapid development and testing. **This is not suitable for production use with sensitive data.** The next major update will implement strong encryption with a master password.
+
+**Planned Security Enhancements:**
+- **AES-256 GCM encryption** for data at rest
+- **Argon2** key derivation function for master password
+- **Zero-knowledge architecture** - only you can decrypt your data
+- **Secure memory handling** for sensitive operations
+- **Optional two-factor authentication**
+
+Found a security issue? Please report it privately to [security@cocoon-pm.com](mailto:security@cocoon-pm.com).
 
 -----
 
 ## License
 
-Cocoon is distributed under the [MIT License](https://www.google.com/search?q=link-to-your-license-file). See `LICENSE` for more information.
+Cocoon is distributed under the [MIT License](LICENSE). See the LICENSE file for full details.
 
 -----
 
-## Join the Conversation
+## Community
 
-Have questions, suggestions, or just want to chat about password security? Connect with us:
+Join the conversation and stay updated:
 
-  * **GitHub Issues:** [https://github.com/pesnik/cocoon/issues](https://www.google.com/search?q=https://github.com/pesnik/cocoon/issues)
-  * **Discussions (if enabled):** [https://github.com/pesnik/cocoon/discussions](https://www.google.com/search?q=https://github.com/pesnik/cocoon/discussions)
+- **GitHub**: [pesnik/cocoon](https://github.com/pesnik/cocoon)
+- **Issues**: [Report bugs or request features](https://github.com/pesnik/cocoon/issues)
+- **Discussions**: [Community discussions](https://github.com/pesnik/cocoon/discussions)
 
 -----
 
 **Cocoon: Your Digital World, Securely Enfolded.**
+
+---
+
+*Built with ❤️ and Rust for security, performance, and peace of mind.*
