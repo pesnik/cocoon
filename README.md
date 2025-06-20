@@ -132,7 +132,7 @@ Get a glimpse of Cocoon's intuitive interface:
 
 | **Main Interface** | **Add New Entry** | **Search & Filter** |
 |-------------------|-------------------|-------------------|
-| ![Main Interface](screenshots/main.png) | ![Add New Entry](screenshots/add.png) | ![Search](screenshots/search.png) |
+| ![Main Interface](screenshots/search.png) | ![Add New Entry](screenshots/add.png) | ![Search](screenshots/search.png) |
 | Your secure password vault | Simple form for new credentials | Quick search and filtering |
 
 *Screenshots reflect the current MVP version and may evolve with future updates.*
