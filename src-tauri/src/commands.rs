@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
-use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::ShortcutState;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -224,11 +224,7 @@ pub fn run() {
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
-                let shortcut = if cfg!(target_os = "macos") {
-                    Shortcut::new(Some(Modifiers::SUPER | Modifiers::ALT), Code::KeyC)
-                } else {
-                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyC)
-                };
+                let shortcut = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyP);
 
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
