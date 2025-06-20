@@ -19,7 +19,7 @@ In today's digital landscape, strong, unique passwords are your first line of de
 **What's Working:**
 - ✅ Secure password storage and retrieval with JSON persistence
 - ✅ Cross-platform compatibility (Windows & macOS)
-- ✅ **Global hotkey for quick access** (`Ctrl+Shift+C` on Windows, `Cmd+Alt+C` on macOS)
+- ✅ **Global hotkey for quick access** `Alt+Shift+P`
 - ✅ **System tray integration** with click-to-show functionality
 - ✅ **Auto-hide on focus loss** for enhanced security
 - ✅ **Clipboard integration** for one-click password/username copying
@@ -39,7 +39,7 @@ In today's digital landscape, strong, unique passwords are your first line of de
 ## Key Features
 
 ### ✅ Current Features
-- **Global Hotkey Access**: Quick access via `Ctrl+Shift+C` (Windows) or `Cmd+Alt+C` (macOS)
+- **Global Hotkey Access**: Quick access via `Alt+Shift+P`
 - **System Tray Integration**: Minimizes to system tray, click to show/hide
 - **Smart Search**: Real-time filtering across titles, usernames, and URLs
 - **One-Click Copy**: Copy passwords and usernames directly to clipboard
@@ -92,7 +92,7 @@ cargo build --release
 
 ### First Time Setup
 1. **Launch Cocoon** - The app will start minimized to your system tray
-2. **Access via Hotkey**: Press `Ctrl+Shift+C` (Windows) or `Cmd+Alt+C` (macOS) to open
+2. **Access via Hotkey**: Press `Alt+Shift+P`
 3. **Add Your First Password**: Click "Add New Entry" to start building your vault
 4. **Quick Access**: Use the hotkey anytime to search and copy your passwords
 
@@ -109,7 +109,7 @@ cargo build --release
 ### Usage
 
 **Opening Cocoon:**
-- **Global Hotkey**: `Ctrl+Shift+C` (Windows) or `Cmd+Alt+C` (macOS)
+- **Global Hotkey**: `Alt+Shift+P`
 - **System Tray**: Click the Cocoon icon in your system tray
 - **Auto-Start**: Cocoon launches automatically when your system starts
 
@@ -176,7 +176,7 @@ cargo run
 ### v1.0 (Current MVP) ✅
 - [x] Password storage and retrieval with local JSON persistence
 - [x] Cross-platform support (Windows & macOS)
-- [x] Global hotkey access (`Ctrl+Shift+C` / `Cmd+Alt+C`)
+- [x] Global hotkey access `Alt+Shift+P`
 - [x] System tray integration with click-to-show
 - [x] Auto-hide on focus loss for security
 - [x] One-click clipboard copying for passwords/usernames
