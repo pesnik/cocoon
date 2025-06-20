@@ -23,6 +23,19 @@ In today's digital landscape, strong, unique passwords are your first line of de
 
 -----
 
+## Screenshots
+
+Get a glimpse of Cocoon’s intuitive interface:
+
+| **Search Interface** | **Add New Entry** | **Edit Entry** |
+|--------------------|------------------|---------------|
+| ![Search Interface](screenshots/search.png) | ![Add New Entry](screenshots/add.png) | ![Edit Entry](screenshots/add.png) |
+| Quickly search and copy credentials with a hotkey. | Add new passwords with a clean, simple form. | Edit existing entries with ease. |
+
+*Note: Screenshots reflect the current development version and may change in future releases.*
+
+-----
+
 ## Getting Started (Coming Soon)
 
 Cocoon is currently under active development. Once the first stable release is available, you'll find detailed instructions here on how to download, install, and configure your personal password Cocoon.
