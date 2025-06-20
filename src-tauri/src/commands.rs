@@ -2,8 +2,8 @@ use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 use tauri_plugin_global_shortcut::ShortcutState;
 
-#[tauri::command]
-fn search_entries(query: String) -> Vec<PasswordEntry> {
+#[tauri::command(async)]
+async fn search_entries(query: String) -> Vec<PasswordEntry> {
     // Mock data for now - replace with actual database queries later
     let mock_entries = vec![
         PasswordEntry {
