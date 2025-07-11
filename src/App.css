@@ -195,7 +195,240 @@ body {
 .result-item.selected {
   background: rgba(67, 97, 238, 0.1);
 }
+/* Authentication Container Styles */
 
+.auth-container {
+  background: white;
+  border-radius: 0; /* Remove border radius for full body */
+  box-shadow: none; /* Remove shadow for full body */
+  padding: 2rem;
+  width: 100%;
+  max-width: none; /* Remove max-width constraint */
+  margin: 0; /* Remove margin */
+  height: 100%; /* Take full height */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  animation: slideInFromBottom 0.4s ease-out;
+}
+
+.auth-container h2 {
+  color: var(--text-color);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+/* Auth Form Styles */
+.auth-container form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 400px; /* Limit form width for better UX */
+}
+
+/* Error Message Styles */
+.error {
+  color: var(--danger-color);
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: rgba(247, 37, 133, 0.1);
+  border: 1px solid rgba(247, 37, 133, 0.2);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.error::before {
+  content: '⚠️';
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* Auth Form Styles */
+.auth-container .form-group {
+  margin-bottom: 1.25rem;
+}
+
+.auth-container .form-group:last-of-type {
+  margin-bottom: 0;
+}
+
+.auth-container .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.auth-container .form-group input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: var(--transition);
+  background: white;
+}
+
+.auth-container .form-group input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+}
+
+.auth-container .form-group input.error {
+  border-color: var(--danger-color);
+  box-shadow: 0 0 0 3px rgba(247, 37, 133, 0.1);
+}
+
+/* Auth Submit Button */
+.auth-container button[type="submit"] {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.875rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  position: relative;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.auth-container button[type="submit"]:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 15px rgba(67, 97, 238, 0.3);
+}
+
+.auth-container button[type="submit"]:active {
+  transform: translateY(0);
+}
+
+.auth-container button[type="submit"]:disabled {
+  background: var(--text-light);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Loading state for auth buttons */
+.auth-container button[type="submit"].loading {
+  background: var(--primary-color);
+  cursor: not-allowed;
+  padding-left: 2.5rem;
+}
+
+.auth-container button[type="submit"].loading::before {
+  content: '';
+  position: absolute;
+  left: 0.875rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Lock Button Styles */
+.lock-btn {
+  background: var(--secondary-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.5rem;
+}
+
+.lock-btn:hover {
+  background: var(--primary-color);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
+}
+
+.lock-btn:active {
+  transform: translateY(0);
+}
+
+/* Additional Animations */
+@keyframes slideInFromBottom {
+  from { 
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes spin {
+  from { transform: translateY(-50%) rotate(0deg); }
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+
+@keyframes unlockSuccess {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); background: var(--success-color); }
+  100% { transform: scale(1); background: var(--primary-color); }
+}
+
+/* Responsive Design for Authentication */
+@media (max-width: 600px) {
+  .auth-container {
+    padding: 1.5rem;
+    margin: 1rem;
+    border-radius: 8px;
+  }
+  
+  .auth-container h2 {
+    font-size: 1.25rem;
+  }
+  
+  .auth-container button[type="submit"] {
+    padding: 1rem 1.5rem;
+    font-size: 1.05rem;
+  }
+  
+  .lock-btn {
+    padding: 0.75rem;
+    font-size: 0.9rem;
+  }
+}
+
+/* Focus styles for accessibility */
+.auth-container button[type="submit"]:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.auth-container input:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.lock-btn:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
 .entry-icon {
   width: 40px;
   height: 40px;
@@ -321,7 +554,6 @@ body {
 
 /* Form Styles */
 .form-container {
-  /* This container will now be an overlay on the full-screen app */
   position: absolute; /* Position it relative to the .app (body) */
   top: 0;
   left: 0;
@@ -498,8 +730,6 @@ form {
 }
 
 /* Responsive Design */
-/* For a truly app-as-body approach, the main responsive rules simplify significantly,
-   as the default behavior is already full-screen. */
 @media (max-width: 600px) {
   /* Minimal adjustments needed as the app is already full screen */
   .app {
