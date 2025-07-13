@@ -66,18 +66,24 @@ impl SecurityContext {
         Self {
             master_key: None,
             last_activity: Instant::now(),
-            session_timeout: Duration::from_secs(300), // 5 minutes
+            session_timeout: Duration::from_secs(300),
             failed_attempts: 0,
             locked_until: None,
         }
     }
 
     fn is_authenticated(&self) -> bool {
-        self.master_key.is_some()
-            && self.last_activity.elapsed() < self.session_timeout
-            && self
-                .locked_until
-                .map_or(true, |until| Instant::now() > until)
+        if self.master_key.is_none() {
+            return false;
+        }
+
+        if let Some(locked_until) = self.locked_until {
+            if Instant::now() < locked_until {
+                return false;
+            }
+        }
+
+        self.last_activity.elapsed() < self.session_timeout
     }
 
     fn update_activity(&mut self) {
@@ -322,8 +328,15 @@ async fn authenticate(password: String) -> Result<bool, String> {
 
 #[tauri::command]
 async fn is_authenticated() -> Result<bool, String> {
-    let context = SECURITY_CONTEXT.read().unwrap();
-    Ok(context.is_authenticated())
+    let mut context = SECURITY_CONTEXT.write().unwrap();
+    let is_auth = context.is_authenticated();
+
+    // If authenticated, update activity
+    if is_auth {
+        context.update_activity();
+    }
+
+    Ok(is_auth)
 }
 
 #[tauri::command]
@@ -421,15 +434,16 @@ fn save_password_store(store: &PasswordStore) -> Result<(), String> {
     save_encrypted_store(&encrypted_store)
 }
 
-// Enhanced command functions
 #[tauri::command(async)]
 async fn search_entries(query: String) -> Result<Vec<PasswordEntry>, String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-    if !context.is_authenticated() {
-        return Err("Not authenticated".to_string());
-    }
-    context.update_activity();
-    drop(context);
+    // Check authentication first
+    {
+        let mut context = SECURITY_CONTEXT.write().unwrap();
+        if !context.is_authenticated() {
+            return Err("Session expired. Please authenticate again.".to_string());
+        }
+        context.update_activity();
+    } // Release lock here
 
     let store = load_password_store()?;
 
@@ -492,6 +506,30 @@ async fn add_entry(
     save_password_store(&store)?;
 
     Ok(entry_id)
+}
+
+#[tauri::command]
+async fn check_session_status(app_handle: tauri::AppHandle) -> Result<bool, String> {
+    let mut context = SECURITY_CONTEXT.write().unwrap();
+
+    if context.master_key.is_some() && context.last_activity.elapsed() > context.session_timeout {
+        context.lock_session();
+        drop(context);
+
+        // Emit timeout event
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.emit("session_timeout", ());
+        }
+
+        return Ok(false);
+    }
+
+    let is_auth = context.is_authenticated();
+    if is_auth {
+        context.update_activity();
+    }
+
+    Ok(is_auth)
 }
 
 #[tauri::command]
@@ -684,19 +722,27 @@ async fn export_vault(export_password: String) -> Result<String, String> {
         .map_err(|e| format!("Failed to serialize export: {}", e))
 }
 
-// Helper function to start session timeout checker
 fn start_session_timeout_checker(app_handle: tauri::AppHandle) {
     std::thread::spawn(move || {
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(60));
-            let mut context = SECURITY_CONTEXT.write().unwrap();
-            if context.is_authenticated()
-                && context.last_activity.elapsed() > context.session_timeout
-            {
-                context.lock_session();
-                println!("Session timed out and locked");
+            std::thread::sleep(std::time::Duration::from_secs(60)); // Check more frequently
 
-                // Notify frontend to show login screen
+            let should_timeout = {
+                let mut context = SECURITY_CONTEXT.write().unwrap();
+
+                // Check if authenticated and timed out
+                if context.master_key.is_some()
+                    && context.last_activity.elapsed() > context.session_timeout
+                {
+                    context.lock_session();
+                    true
+                } else {
+                    false
+                }
+            };
+
+            // Emit timeout event outside of the lock
+            if should_timeout {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.emit("session_timeout", ());
                 }
@@ -717,6 +763,7 @@ pub fn run() {
             setup_master_password,
             authenticate,
             is_authenticated,
+            check_session_status,
             lock_session,
             has_master_password,
             search_entries,
@@ -781,7 +828,6 @@ pub fn run() {
                     autostart_manager
                         .enable()
                         .expect("Failed to enable autostart");
-                    println!("Autostart enabled successfully.");
                 }
             }
 
@@ -798,7 +844,23 @@ pub fn run() {
                 RunEvent::WindowEvent { label, event, .. } => {
                     match event {
                         WindowEvent::Focused(focused) => {
-                            if !focused {
+                            if focused {
+                                // Check session status when window gains focus
+                                let app_clone = app_handle.clone();
+                                std::thread::spawn(move || {
+                                    let mut context = SECURITY_CONTEXT.write().unwrap();
+                                    if context.master_key.is_none()
+                                        && context.last_activity.elapsed() > context.session_timeout
+                                    {
+                                        context.lock_session();
+                                        drop(context);
+
+                                        if let Some(window) = app_clone.get_webview_window(&label) {
+                                            let _ = window.emit("session_timeout", ());
+                                        }
+                                    }
+                                });
+                            } else {
                                 // Update activity when window loses focus
                                 let mut context = SECURITY_CONTEXT.write().unwrap();
                                 if context.is_authenticated() {

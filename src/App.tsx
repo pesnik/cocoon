@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./App.css";
 
@@ -41,8 +42,22 @@ function App() {
   const appWindow = getCurrentWebviewWindow();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  
+useEffect(() => {
+  const unlistenPromise = listen('session_timeout', () => {
+    setIsAuthenticated(false);
+    setMasterPassword("");
+    setAuthError("Session timed out. Please log in again.");
+    
+    setEntries([]);
+    setQuery("");
+  });
 
-  // Focus input when window is shown
+  return () => {
+    unlistenPromise.then(unlisten => unlisten());
+  };
+}, []);
+
   useEffect(() => {
     const focusInput = () => {
       setTimeout(() => {
