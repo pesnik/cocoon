@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./App.css";
 
@@ -24,12 +23,15 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [editingEntry, setEditingEntry] = useState<PasswordEntry | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasMasterPassword, setHasMasterPassword] = useState(false);
   const [masterPassword, setMasterPassword] = useState("");
   const [newMasterPassword, setNewMasterPassword] = useState("");
   const [confirmMasterPassword, setConfirmMasterPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false); // New state for overall authentication
+  const [editPasswordAuth, setEditPasswordAuth] = useState(""); // State for password auth on edit form
+  const [editAuthError, setEditAuthError] = useState(""); // Error for password auth on edit form
+
   // Form state
   const [formData, setFormData] = useState({
     title: "",
@@ -42,30 +44,23 @@ function App() {
   const appWindow = getCurrentWebviewWindow();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  
-useEffect(() => {
-  const unlistenPromise = listen('session_timeout', () => {
-    setIsAuthenticated(false);
-    setMasterPassword("");
-    setAuthError("Session timed out. Please log in again.");
-    
-    setEntries([]);
-    setQuery("");
-  });
+  const masterPasswordRef = useRef<HTMLInputElement>(null);
+  const editPasswordAuthRef = useRef<HTMLInputElement>(null); // Ref for edit form password input
 
-  return () => {
-    unlistenPromise.then(unlisten => unlisten());
-  };
-}, []);
-
+  // Focus management
   useEffect(() => {
     const focusInput = () => {
       setTimeout(() => {
-        if (view === "search") {
+        if (view === "search" && isAuthenticated) {
           searchInputRef.current?.focus();
           searchInputRef.current?.select();
-        } else if (view === "add" || view === "edit") {
+        } else if ((view === "add" || view === "edit") && isAuthenticated) {
           titleInputRef.current?.focus();
+        } else if (hasMasterPassword && !isAuthenticated) {
+          masterPasswordRef.current?.focus();
+        } else if (!hasMasterPassword) {
+          // Focus the new master password input on initial setup
+          document.getElementById("newMasterPassword")?.focus();
         }
       }, 100);
     };
@@ -81,23 +76,33 @@ useEffect(() => {
     return () => {
       unlisten.then((f) => f());
     };
-  }, [view]);
+  }, [view, isAuthenticated, hasMasterPassword]);
 
-  // Search entries when query changes
+  // Check master password existence on app start
   useEffect(() => {
-    if (view !== "search" || !isAuthenticated) return;
+    checkMasterPassword();
+  }, []);
+
+  // Search entries when query changes and authenticated
+  useEffect(() => {
+    if (view !== "search" || !isAuthenticated) return; // Only search if authenticated
 
     const searchEntries = async () => {
       setLoading(true);
       try {
         const results = await invoke<PasswordEntry[]>("search_entries", {
           query,
+          masterPassword, // Use the authenticated master password
         });
         setEntries(results);
         setSelectedIndex(0);
       } catch (error) {
         console.error("Search failed:", error);
         setEntries([]);
+        if (error === "Invalid master password") {
+          setIsAuthenticated(false); // Reset authentication on invalid password
+          setAuthError("Invalid master password. Please re-enter.");
+        }
       } finally {
         setLoading(false);
       }
@@ -105,53 +110,17 @@ useEffect(() => {
 
     const debounceTimer = setTimeout(searchEntries, 200);
     return () => clearTimeout(debounceTimer);
-  }, [query, view, isAuthenticated]);
+  }, [query, view, isAuthenticated]); // Dependency on isAuthenticated
 
-  useEffect(() => {
-    checkMasterPassword();
-  }, []);
-
-  useEffect(() => {
-    if (hasMasterPassword) {
-      checkAuthentication();
-    }
-  }, [hasMasterPassword]);
-  useEffect(() => {
-    if (isAuthenticated && view === "search") {
-      // Trigger a search when authentication is successful
-      const searchEntries = async () => {
-        setLoading(true);
-        try {
-          const results = await invoke<PasswordEntry[]>("search_entries", {
-            query,
-          });
-          setEntries(results);
-          setSelectedIndex(0);
-        } catch (error) {
-          console.error("Search failed:", error);
-          setEntries([]);
-        } finally {
-          setLoading(false);
-        }
-      };
-      searchEntries();
-    }
-  }, [isAuthenticated]);
   const checkMasterPassword = async () => {
     try {
       const exists = await invoke<boolean>("has_master_password");
       setHasMasterPassword(exists);
+      if (!exists) {
+        setIsAuthenticated(false); // If no master password, user is not authenticated
+      }
     } catch (error) {
       console.error("Failed to check master password:", error);
-    }
-  };
-
-  const checkAuthentication = async () => {
-    try {
-      const authenticated = await invoke<boolean>("is_authenticated");
-      setIsAuthenticated(authenticated);
-    } catch (error) {
-      console.error("Failed to check authentication:", error);
     }
   };
 
@@ -171,6 +140,8 @@ useEffect(() => {
     try {
       await invoke("setup_master_password", { password: newMasterPassword });
       setHasMasterPassword(true);
+      setMasterPassword(newMasterPassword); // Store the master password once set up
+      setIsAuthenticated(true); // Authenticate after successful setup
       setNewMasterPassword("");
       setConfirmMasterPassword("");
       setAuthError("");
@@ -179,29 +150,33 @@ useEffect(() => {
     }
   };
 
-  const authenticate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const authenticate = async (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
+
+    if (!masterPassword.trim()) {
+      setAuthError("Please enter your master password");
+      return;
+    }
 
     try {
-      await invoke("authenticate", { password: masterPassword });
-      setIsAuthenticated(true);
-      setMasterPassword("");
+      await invoke("verify_master_password", {
+        password: masterPassword,
+      });
+      setIsAuthenticated(true); // Set authenticated on successful verification
       setAuthError("");
     } catch (error) {
-      setAuthError(error as string);
+      console.log(error);
+      setAuthError("Invalid master password");
+      setMasterPassword("");
     }
   };
 
-  const lockSession = async () => {
-    try {
-      await invoke("lock_session");
-      setIsAuthenticated(false);
-    } catch (error) {
-      console.error("Failed to lock session:", error);
-    }
-  };
   // Keyboard navigation for search view
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (!isAuthenticated) return; // Only allow if authenticated
+
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
@@ -245,17 +220,23 @@ useEffect(() => {
   };
 
   const copyPassword = async (entryId: number) => {
+    if (!isAuthenticated) return;
     try {
-      await invoke("copy_password", { entryId });
+      await invoke("copy_password", { entryId, masterPassword });
       showNotification("Password copied to clipboard");
       hideWindow();
     } catch (error) {
       console.error("Failed to copy password:", error);
       showNotification("Failed to copy password", "error");
+      if (error === "Invalid master password") {
+        setIsAuthenticated(false);
+        setAuthError("Invalid master password. Please re-enter.");
+      }
     }
   };
 
   const copyUsername = async (username: string) => {
+    if (!isAuthenticated) return;
     try {
       await invoke("copy_username", { username });
       showNotification("Username copied to clipboard");
@@ -286,21 +267,30 @@ useEffect(() => {
   };
 
   const openAddForm = () => {
+    if (!isAuthenticated) return;
     setView("add");
     resetForm();
     setEditingEntry(null);
   };
 
   const openEditForm = (entry: PasswordEntry) => {
+    if (!isAuthenticated) return;
     setView("edit");
     setEditingEntry(entry);
     setFormData({
       title: entry.title,
       username: entry.username,
-      password: entry.password,
+      // Do not pre-fill password for security
+      password: "",
       url: entry.url || "",
       notes: entry.notes || "",
     });
+    setShowPassword(false); // Hide password by default
+    setEditPasswordAuth(""); // Clear previous authentication attempt
+    setEditAuthError("");
+    setTimeout(() => {
+      editPasswordAuthRef.current?.focus(); // Focus on the password authentication input
+    }, 100);
   };
 
   const resetForm = () => {
@@ -333,6 +323,7 @@ useEffect(() => {
           password: formData.password,
           url: formData.url.trim() || null,
           notes: formData.notes.trim() || null,
+          masterPassword,
         });
         showNotification("Password entry added successfully");
       } else if (view === "edit" && editingEntry) {
@@ -343,6 +334,7 @@ useEffect(() => {
           password: formData.password,
           url: formData.url.trim() || null,
           notes: formData.notes.trim() || null,
+          masterPassword,
         });
         showNotification("Password entry updated successfully");
       }
@@ -353,24 +345,33 @@ useEffect(() => {
     } catch (error) {
       console.error("Failed to save entry:", error);
       showNotification("Failed to save entry", "error");
+      if (error === "Invalid master password") {
+        setIsAuthenticated(false);
+        setAuthError("Invalid master password. Please re-enter.");
+      }
     }
   };
 
   const handleDelete = async (id: number) => {
+    if (!isAuthenticated) return;
     try {
-      // Perform the backend deletion
-      await invoke("delete_entry", { id });
+      await invoke("delete_entry", { id, masterPassword });
       showNotification("Password entry deleted");
 
       // Explicitly refetch the entries
       const results = await invoke<PasswordEntry[]>("search_entries", {
         query: "",
+        masterPassword,
       });
       setEntries(results);
       setSelectedIndex(0);
     } catch (error) {
       console.error("Failed to delete entry:", error);
       showNotification("Failed to delete entry", "error");
+      if (error === "Invalid master password") {
+        setIsAuthenticated(false);
+        setAuthError("Invalid master password. Please re-enter.");
+      }
     }
   };
 
@@ -386,7 +387,7 @@ useEffect(() => {
       setFormData((prev) => ({ ...prev, password }));
     } catch (error) {
       console.error("Failed to generate password:", error);
-      // Fallback to the existing client-side generation
+      // Fallback to client-side generation
       const length = 16;
       const charset =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
@@ -423,6 +424,107 @@ useEffect(() => {
       .toUpperCase()
       .slice(0, 2);
   };
+
+  const handleEditPasswordAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editPasswordAuth.trim()) {
+      setEditAuthError("Please enter your master password to view.");
+      return;
+    }
+
+    try {
+      await invoke("verify_master_password", {
+        password: editPasswordAuth,
+      });
+      // If authentication is successful, fetch the actual password
+      if (editingEntry) {
+        const entryWithPassword = await invoke<PasswordEntry>(
+          "get_entry_by_id",
+          {
+            id: editingEntry.id,
+            masterPassword: editPasswordAuth,
+          }
+        );
+        setFormData((prev) => ({
+          ...prev,
+          password: entryWithPassword.password,
+        }));
+      }
+      setEditAuthError("");
+      setShowPassword(true); // Now we can show the password
+    } catch (error) {
+      console.log(error);
+      setEditAuthError("Invalid master password");
+      setEditPasswordAuth("");
+      setShowPassword(false);
+    }
+  };
+
+  // Render logic based on authentication and view state
+  if (!hasMasterPassword) {
+    return (
+      <div className="app">
+        <div className="auth-container">
+          <h2>Setup Master Password</h2>
+          <form onSubmit={setupMasterPassword}>
+            <div className="form-group">
+              <label htmlFor="newMasterPassword">Master Password</label>
+              <input
+                id="newMasterPassword"
+                type="password"
+                value={newMasterPassword}
+                onChange={(e) => setNewMasterPassword(e.target.value)}
+                placeholder="Enter master password (min 8 chars)"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="confirmMasterPassword">Confirm Password</label>
+              <input
+                id="confirmMasterPassword"
+                type="password"
+                value={confirmMasterPassword}
+                onChange={(e) => setConfirmMasterPassword(e.target.value)}
+                placeholder="Confirm master password"
+                required
+              />
+            </div>
+            {authError && <div className="error">{authError}</div>}
+            <button type="submit">Setup Master Password</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="app">
+        <div className="auth-container">
+          <h2>Enter Master Password</h2>
+          <form onSubmit={authenticate}>
+            <div className="form-group">
+              <label htmlFor="masterPassword">Master Password</label>
+              <input
+                ref={masterPasswordRef}
+                id="masterPassword"
+                type="password"
+                value={masterPassword}
+                onChange={(e) => {
+                  setMasterPassword(e.target.value);
+                  setAuthError("");
+                }}
+                placeholder="Enter master password"
+                required
+              />
+            </div>
+            {authError && <div className="error">{authError}</div>}
+            <button type="submit">Continue</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (view === "add" || view === "edit") {
     return (
@@ -473,37 +575,63 @@ useEffect(() => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="password">Password *</label>
               <div className="password-input-group">
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={formData.password}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      password: e.target.value,
-                    }))
-                  }
-                  placeholder="Enter password"
-                  required
-                />
-                <button
-                  type="button"
-                  className="toggle-password-btn"
-                  onClick={() => setShowPassword(!showPassword)}
-                  title={showPassword ? "Hide Password" : "Show Password"}
-                >
-                  {showPassword ? "👁️" : "🙈"}
-                </button>
-                <button
-                  type="button"
-                  className="generate-btn"
-                  onClick={generatePassword}
-                  title="Generate Password"
-                >
-                  🎲
-                </button>
+                {view === "edit" && !showPassword ? (
+                  <div className="password-auth-overlay">
+                    <input
+                      ref={editPasswordAuthRef}
+                      type="password"
+                      value={editPasswordAuth}
+                      onChange={(e) => {
+                        setEditPasswordAuth(e.target.value);
+                        setEditAuthError("");
+                      }}
+                      placeholder="Enter master password to view/edit"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleEditPasswordAuth}
+                      className="auth-password-btn"
+                    >
+                      Unlock
+                    </button>
+                    {editAuthError && (
+                      <div className="error-small">{editAuthError}</div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          password: e.target.value,
+                        }))
+                      }
+                      placeholder="Enter password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="toggle-password-btn"
+                      onClick={() => setShowPassword(!showPassword)}
+                      title={showPassword ? "Hide Password" : "Show Password"}
+                    >
+                      {showPassword ? "👁️" : "🙈"}
+                    </button>
+                    <button
+                      type="button"
+                      className="generate-btn"
+                      onClick={generatePassword}
+                      title="Generate Password"
+                    >
+                      🎲
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -547,79 +675,13 @@ useEffect(() => {
               <button type="submit" className="save-btn">
                 {view === "add" ? "Add Entry" : "Update Entry"}
               </button>
-              <button
-                className="lock-btn"
-                onClick={lockSession}
-                title="Lock Session"
-              >
-                🔒
-              </button>
             </div>
-          </form>
-        </div>
-      </div>
-    );
-  }
-  if (!hasMasterPassword) {
-    return (
-      <div className="app">
-        <div className="auth-container">
-          <h2>Setup Master Password</h2>
-          <form onSubmit={setupMasterPassword}>
-            <div className="form-group">
-              <label htmlFor="newMasterPassword">Master Password</label>
-              <input
-                id="newMasterPassword"
-                type="password"
-                value={newMasterPassword}
-                onChange={(e) => setNewMasterPassword(e.target.value)}
-                placeholder="Enter master password (min 8 chars)"
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="confirmMasterPassword">Confirm Password</label>
-              <input
-                id="confirmMasterPassword"
-                type="password"
-                value={confirmMasterPassword}
-                onChange={(e) => setConfirmMasterPassword(e.target.value)}
-                placeholder="Confirm master password"
-                required
-              />
-            </div>
-            {authError && <div className="error">{authError}</div>}
-            <button type="submit">Setup Master Password</button>
           </form>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    return (
-      <div className="app">
-        <div className="auth-container">
-          <h2>Unlock Vault</h2>
-          <form onSubmit={authenticate}>
-            <div className="form-group">
-              <label htmlFor="masterPassword">Master Password</label>
-              <input
-                id="masterPassword"
-                type="password"
-                value={masterPassword}
-                onChange={(e) => setMasterPassword(e.target.value)}
-                placeholder="Enter master password"
-                required
-              />
-            </div>
-            {authError && <div className="error">{authError}</div>}
-            <button type="submit">Unlock</button>
-          </form>
-        </div>
-      </div>
-    );
-  }
   return (
     <div className="app">
       <div className="search-container">
@@ -644,11 +706,13 @@ useEffect(() => {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             className="search-input"
+            disabled={!isAuthenticated} // Disable search if not authenticated
           />
           <button
             className="add-btn"
             onClick={openAddForm}
             title="Add New Entry (Insert/F2)"
+            disabled={!isAuthenticated} // Disable add if not authenticated
           >
             +
           </button>
@@ -663,13 +727,15 @@ useEffect(() => {
       </div>
 
       <div className="results-container">
-        {loading ? (
+        {loading && isAuthenticated ? ( // Only show loading if authenticated
           <div className="loading">Searching...</div>
         ) : entries.length === 0 ? (
           <div className="no-results">
-            {query
-              ? "No passwords found"
-              : "Start typing to search or press Insert to add a new entry..."}
+            {isAuthenticated
+              ? query
+                ? "No passwords found"
+                : "Start typing to search or press Insert to add a new entry..."
+              : "Please enter your master password to get started."}
           </div>
         ) : (
           <div className="results-list">

@@ -488,15 +488,56 @@ body {
   flex-shrink: 0; /* Prevent actions from shrinking */
 }
 
+/* Password Input Group */
 .password-input-group {
   position: relative;
-  display: flex;
-  align-items: center;
+  width: 100%;
 }
 
-.password-input-group input {
-  flex: 1;
-  padding-right: 80px; /* Space for both buttons */
+/* Password Auth Overlay */
+.password-auth-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.password-auth-overlay input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  box-sizing: border-box; /* Ensures padding doesn't affect width */
+}
+
+.password-auth-overlay input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
+}
+
+.auth-password-btn {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.auth-password-btn:hover {
+  background-color: var(--primary-hover);
+}
+
+.error-small {
+  color: var(--danger-color);
+  font-size: 0.8rem;
+  margin-top: 4px;
 }
 
 .toggle-password-btn {

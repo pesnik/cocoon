@@ -2,7 +2,7 @@ use serde_json;
 use std::fs;
 use std::path::PathBuf;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -17,9 +17,6 @@ use argon2::password_hash::rand_core::RngCore;
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::{engine::general_purpose, Engine as _};
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
-use zeroize::Zeroize;
 
 // Security-enhanced structures
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -51,69 +48,6 @@ struct PasswordStore {
     created_at: String,
     last_backup: Option<String>,
 }
-
-// Security context for managing authentication state
-struct SecurityContext {
-    master_key: Option<Vec<u8>>,
-    last_activity: Instant,
-    session_timeout: Duration,
-    failed_attempts: u32,
-    locked_until: Option<Instant>,
-}
-
-impl SecurityContext {
-    fn new() -> Self {
-        Self {
-            master_key: None,
-            last_activity: Instant::now(),
-            session_timeout: Duration::from_secs(300),
-            failed_attempts: 0,
-            locked_until: None,
-        }
-    }
-
-    fn is_authenticated(&self) -> bool {
-        if self.master_key.is_none() {
-            return false;
-        }
-
-        if let Some(locked_until) = self.locked_until {
-            if Instant::now() < locked_until {
-                return false;
-            }
-        }
-
-        self.last_activity.elapsed() < self.session_timeout
-    }
-
-    fn update_activity(&mut self) {
-        self.last_activity = Instant::now();
-    }
-
-    fn lock_session(&mut self) {
-        if let Some(ref mut key) = self.master_key {
-            key.zeroize();
-        }
-        self.master_key = None;
-    }
-
-    fn record_failed_attempt(&mut self) {
-        self.failed_attempts += 1;
-        if self.failed_attempts >= 5 {
-            self.locked_until = Some(Instant::now() + Duration::from_secs(300));
-            // 5 min lockout
-        }
-    }
-
-    fn reset_failed_attempts(&mut self) {
-        self.failed_attempts = 0;
-        self.locked_until = None;
-    }
-}
-
-// Global security context
-static SECURITY_CONTEXT: std::sync::LazyLock<Arc<RwLock<SecurityContext>>> =
-    std::sync::LazyLock::new(|| Arc::new(RwLock::new(SecurityContext::new())));
 
 impl Default for PasswordStore {
     fn default() -> Self {
@@ -287,16 +221,7 @@ async fn setup_master_password(password: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn authenticate(password: String) -> Result<bool, String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-
-    // Check if locked out
-    if let Some(locked_until) = context.locked_until {
-        if Instant::now() < locked_until {
-            return Err("Account temporarily locked due to failed attempts".to_string());
-        }
-    }
-
+fn verify_master_password(password: &str) -> Result<Vec<u8>, String> {
     let hash_path = get_master_hash_path()?;
     if !hash_path.exists() {
         return Err("Master password not set".to_string());
@@ -309,41 +234,13 @@ async fn authenticate(password: String) -> Result<bool, String> {
         .map_err(|e| format!("Failed to parse password hash: {}", e))?;
 
     let argon2 = Argon2::default();
-    match argon2.verify_password(password.as_bytes(), &parsed_hash) {
-        Ok(_) => {
-            // Generate and store master key
-            let salt = parsed_hash.salt.unwrap().as_str().as_bytes();
-            let key = generate_key_from_password(&password, salt)?;
-            context.master_key = Some(key);
-            context.update_activity();
-            context.reset_failed_attempts();
-            Ok(true)
-        }
-        Err(_) => {
-            context.record_failed_attempt();
-            Err("Invalid master password".to_string())
-        }
-    }
-}
+    argon2
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .map_err(|_| "Invalid master password".to_string())?;
 
-#[tauri::command]
-async fn is_authenticated() -> Result<bool, String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-    let is_auth = context.is_authenticated();
-
-    // If authenticated, update activity
-    if is_auth {
-        context.update_activity();
-    }
-
-    Ok(is_auth)
-}
-
-#[tauri::command]
-async fn lock_session() -> Result<(), String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-    context.lock_session();
-    Ok(())
+    // Generate and return the key
+    let salt = parsed_hash.salt.unwrap().as_str().as_bytes();
+    generate_key_from_password(password, salt)
 }
 
 #[tauri::command]
@@ -374,47 +271,25 @@ fn load_encrypted_store() -> Result<EncryptedPasswordStore, String> {
     serde_json::from_str(&content).map_err(|e| format!("Failed to parse encrypted store: {}", e))
 }
 
-fn load_password_store() -> Result<PasswordStore, String> {
-    let context = SECURITY_CONTEXT.read().unwrap();
-    if !context.is_authenticated() {
-        return Err("Not authenticated".to_string());
-    }
-
-    let key = context
-        .master_key
-        .as_ref()
-        .ok_or("No master key available")?;
-    let key_clone = key.clone();
-    drop(context);
-
+fn load_password_store(master_password: &str) -> Result<PasswordStore, String> {
+    let key = verify_master_password(master_password)?;
     let encrypted_store = load_encrypted_store()?;
     let decrypted_data = decrypt_data(
         &encrypted_store.encrypted_data,
         &encrypted_store.nonce,
-        &key_clone,
+        &key,
     )?;
 
     serde_json::from_str(&decrypted_data)
         .map_err(|e| format!("Failed to parse decrypted store: {}", e))
 }
 
-fn save_password_store(store: &PasswordStore) -> Result<(), String> {
-    let context = SECURITY_CONTEXT.read().unwrap();
-    if !context.is_authenticated() {
-        return Err("Not authenticated".to_string());
-    }
-
-    let key = context
-        .master_key
-        .as_ref()
-        .ok_or("No master key available")?;
-    let key_clone = key.clone();
-    drop(context);
-
+fn save_password_store(store: &PasswordStore, master_password: &str) -> Result<(), String> {
+    let key = verify_master_password(master_password)?;
     let store_json =
         serde_json::to_string(store).map_err(|e| format!("Failed to serialize store: {}", e))?;
 
-    let (encrypted_data, nonce) = encrypt_data(&store_json, &key_clone)?;
+    let (encrypted_data, nonce) = encrypt_data(&store_json, &key)?;
 
     // Load existing encrypted store to preserve salt and other metadata
     let mut encrypted_store = load_encrypted_store().unwrap_or_else(|_| {
@@ -435,17 +310,11 @@ fn save_password_store(store: &PasswordStore) -> Result<(), String> {
 }
 
 #[tauri::command(async)]
-async fn search_entries(query: String) -> Result<Vec<PasswordEntry>, String> {
-    // Check authentication first
-    {
-        let mut context = SECURITY_CONTEXT.write().unwrap();
-        if !context.is_authenticated() {
-            return Err("Session expired. Please authenticate again.".to_string());
-        }
-        context.update_activity();
-    } // Release lock here
-
-    let store = load_password_store()?;
+async fn search_entries(
+    query: String,
+    master_password: String,
+) -> Result<Vec<PasswordEntry>, String> {
+    let store = load_password_store(&master_password)?;
 
     if query.is_empty() {
         return Ok(store.entries);
@@ -476,15 +345,9 @@ async fn add_entry(
     password: String,
     url: Option<String>,
     notes: Option<String>,
+    master_password: String,
 ) -> Result<u32, String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-    if !context.is_authenticated() {
-        return Err("Not authenticated".to_string());
-    }
-    context.update_activity();
-    drop(context);
-
-    let mut store = load_password_store()?;
+    let mut store = load_password_store(&master_password)?;
     let password_strength = calculate_password_strength(&password);
 
     let entry = PasswordEntry {
@@ -503,33 +366,9 @@ async fn add_entry(
     store.entries.push(entry);
     store.next_id += 1;
 
-    save_password_store(&store)?;
+    save_password_store(&store, &master_password)?;
 
     Ok(entry_id)
-}
-
-#[tauri::command]
-async fn check_session_status(app_handle: tauri::AppHandle) -> Result<bool, String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-
-    if context.master_key.is_some() && context.last_activity.elapsed() > context.session_timeout {
-        context.lock_session();
-        drop(context);
-
-        // Emit timeout event
-        if let Some(window) = app_handle.get_webview_window("main") {
-            let _ = window.emit("session_timeout", ());
-        }
-
-        return Ok(false);
-    }
-
-    let is_auth = context.is_authenticated();
-    if is_auth {
-        context.update_activity();
-    }
-
-    Ok(is_auth)
 }
 
 #[tauri::command]
@@ -540,15 +379,9 @@ async fn update_entry(
     password: String,
     url: Option<String>,
     notes: Option<String>,
+    master_password: String,
 ) -> Result<(), String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-    if !context.is_authenticated() {
-        return Err("Not authenticated".to_string());
-    }
-    context.update_activity();
-    drop(context);
-
-    let mut store = load_password_store()?;
+    let mut store = load_password_store(&master_password)?;
 
     if let Some(entry) = store.entries.iter_mut().find(|e| e.id == id) {
         entry.title = title;
@@ -559,7 +392,7 @@ async fn update_entry(
         entry.modified_at = chrono::Utc::now().to_rfc3339();
         entry.password_strength = calculate_password_strength(&password);
 
-        save_password_store(&store)?;
+        save_password_store(&store, &master_password)?;
         Ok(())
     } else {
         Err("Entry not found".to_string())
@@ -567,36 +400,35 @@ async fn update_entry(
 }
 
 #[tauri::command]
-async fn delete_entry(id: u32) -> Result<(), String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-    if !context.is_authenticated() {
-        return Err("Not authenticated".to_string());
-    }
-    context.update_activity();
-    drop(context);
-
-    let mut store = load_password_store()?;
+async fn delete_entry(id: u32, master_password: String) -> Result<(), String> {
+    let mut store = load_password_store(&master_password)?;
 
     if let Some(pos) = store.entries.iter().position(|e| e.id == id) {
         store.entries.remove(pos);
-        save_password_store(&store)?;
+        save_password_store(&store, &master_password)?;
         Ok(())
     } else {
         Err("Entry not found".to_string())
     }
 }
-
-// Modified copy_password function without tokio::spawn
 #[tauri::command]
-async fn copy_password(entry_id: u32, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-    if !context.is_authenticated() {
-        return Err("Not authenticated".to_string());
-    }
-    context.update_activity();
-    drop(context);
+async fn get_entry_by_id(id: u32, master_password: String) -> Result<PasswordEntry, String> {
+    let store = load_password_store(&master_password)?;
 
-    let store = load_password_store()?;
+    store
+        .entries
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .ok_or_else(|| "Entry not found".to_string())
+}
+
+#[tauri::command]
+async fn copy_password(
+    entry_id: u32,
+    master_password: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
 
     if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
         // Use clipboard plugin to copy password directly
@@ -604,8 +436,6 @@ async fn copy_password(entry_id: u32, app_handle: tauri::AppHandle) -> Result<()
             .clipboard()
             .write_text(entry.password.clone())
             .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
-
-        println!("Password copied for entry: {}", entry.title);
 
         // Schedule clipboard clear using a separate command
         let clipboard_handle = app_handle.clone();
@@ -627,20 +457,11 @@ async fn copy_password(entry_id: u32, app_handle: tauri::AppHandle) -> Result<()
 
 #[tauri::command]
 async fn copy_username(username: String, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-    if !context.is_authenticated() {
-        return Err("Not authenticated".to_string());
-    }
-    context.update_activity();
-    drop(context);
-
     // Use clipboard plugin to copy username directly
     app_handle
         .clipboard()
         .write_text(username.clone())
         .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
-
-    println!("Username copied: {}", username);
 
     // Hide the window after copying
     if let Some(window) = app_handle.get_webview_window("main") {
@@ -693,15 +514,8 @@ async fn generate_password(
 }
 
 #[tauri::command]
-async fn export_vault(export_password: String) -> Result<String, String> {
-    let mut context = SECURITY_CONTEXT.write().unwrap();
-    if !context.is_authenticated() {
-        return Err("Not authenticated".to_string());
-    }
-    context.update_activity();
-    drop(context);
-
-    let store = load_password_store()?;
+async fn export_vault(export_password: String, master_password: String) -> Result<String, String> {
+    let store = load_password_store(&master_password)?;
     let export_data = serde_json::to_string_pretty(&store)
         .map_err(|e| format!("Failed to serialize vault: {}", e))?;
 
@@ -722,35 +536,6 @@ async fn export_vault(export_password: String) -> Result<String, String> {
         .map_err(|e| format!("Failed to serialize export: {}", e))
 }
 
-fn start_session_timeout_checker(app_handle: tauri::AppHandle) {
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(60)); // Check more frequently
-
-            let should_timeout = {
-                let mut context = SECURITY_CONTEXT.write().unwrap();
-
-                // Check if authenticated and timed out
-                if context.master_key.is_some()
-                    && context.last_activity.elapsed() > context.session_timeout
-                {
-                    context.lock_session();
-                    true
-                } else {
-                    false
-                }
-            };
-
-            // Emit timeout event outside of the lock
-            if should_timeout {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit("session_timeout", ());
-                }
-            }
-        }
-    });
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -761,10 +546,7 @@ pub fn run() {
         ))
         .invoke_handler(tauri::generate_handler![
             setup_master_password,
-            authenticate,
-            is_authenticated,
-            check_session_status,
-            lock_session,
+            verify_master_password,
             has_master_password,
             search_entries,
             add_entry,
@@ -773,6 +555,7 @@ pub fn run() {
             copy_password,
             copy_username,
             generate_password,
+            get_entry_by_id,
             export_vault
         ])
         .setup(|app| {
@@ -835,61 +618,31 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|app_handle, event| {
-            match event {
-                RunEvent::Ready => {
-                    // Start session timeout checker after the app is ready
-                    start_session_timeout_checker(app_handle.clone());
-                }
-                RunEvent::WindowEvent { label, event, .. } => {
-                    match event {
-                        WindowEvent::Focused(focused) => {
-                            if focused {
-                                // Check session status when window gains focus
-                                let app_clone = app_handle.clone();
-                                std::thread::spawn(move || {
-                                    let mut context = SECURITY_CONTEXT.write().unwrap();
-                                    if context.master_key.is_none()
-                                        && context.last_activity.elapsed() > context.session_timeout
-                                    {
-                                        context.lock_session();
-                                        drop(context);
-
-                                        if let Some(window) = app_clone.get_webview_window(&label) {
-                                            let _ = window.emit("session_timeout", ());
-                                        }
-                                    }
-                                });
-                            } else {
-                                // Update activity when window loses focus
-                                let mut context = SECURITY_CONTEXT.write().unwrap();
-                                if context.is_authenticated() {
-                                    context.update_activity();
-                                }
-                                drop(context);
-                                if let Some(window) = app_handle.get_webview_window(&label) {
-                                    let _ = window.hide();
-                                }
-                            }
+        .run(|app_handle, event| match event {
+            RunEvent::WindowEvent { label, event, .. } => match event {
+                WindowEvent::Focused(focused) => {
+                    if !focused {
+                        if let Some(window) = app_handle.get_webview_window(&label) {
+                            let _ = window.hide();
                         }
-                        _ => {}
-                    }
-                }
-                RunEvent::TrayIconEvent(event) =>
-                {
-                    #[cfg(desktop)]
-                    match event {
-                        TrayIconEvent::Click { .. } => {
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                                let _ = window.center();
-                            }
-                        }
-                        _ => {}
                     }
                 }
                 _ => {}
+            },
+            RunEvent::TrayIconEvent(event) =>
+            {
+                #[cfg(desktop)]
+                match event {
+                    TrayIconEvent::Click { .. } => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            let _ = window.center();
+                        }
+                    }
+                    _ => {}
+                }
             }
+            _ => {}
         });
 }
