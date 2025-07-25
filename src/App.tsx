@@ -28,9 +28,9 @@ function App() {
   const [newMasterPassword, setNewMasterPassword] = useState("");
   const [confirmMasterPassword, setConfirmMasterPassword] = useState("");
   const [authError, setAuthError] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // New state for overall authentication
-  const [editPasswordAuth, setEditPasswordAuth] = useState(""); // State for password auth on edit form
-  const [editAuthError, setEditAuthError] = useState(""); // Error for password auth on edit form
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [editPasswordAuth, setEditPasswordAuth] = useState("");
+  const [editAuthError, setEditAuthError] = useState("");
 
   // Form state
   const [formData, setFormData] = useState({
@@ -45,7 +45,7 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const masterPasswordRef = useRef<HTMLInputElement>(null);
-  const editPasswordAuthRef = useRef<HTMLInputElement>(null); // Ref for edit form password input
+  const editPasswordAuthRef = useRef<HTMLInputElement>(null);
 
   // Focus management
   useEffect(() => {
@@ -59,7 +59,6 @@ function App() {
         } else if (hasMasterPassword && !isAuthenticated) {
           masterPasswordRef.current?.focus();
         } else if (!hasMasterPassword) {
-          // Focus the new master password input on initial setup
           document.getElementById("newMasterPassword")?.focus();
         }
       }, 100);
@@ -85,14 +84,14 @@ function App() {
 
   // Search entries when query changes and authenticated
   useEffect(() => {
-    if (view !== "search" || !isAuthenticated) return; // Only search if authenticated
+    if (view !== "search" || !isAuthenticated) return;
 
     const searchEntries = async () => {
       setLoading(true);
       try {
         const results = await invoke<PasswordEntry[]>("search_entries", {
           query,
-          masterPassword, // Use the authenticated master password
+          masterPassword,
         });
         setEntries(results);
         setSelectedIndex(0);
@@ -100,7 +99,7 @@ function App() {
         console.error("Search failed:", error);
         setEntries([]);
         if (error === "Invalid master password") {
-          setIsAuthenticated(false); // Reset authentication on invalid password
+          setIsAuthenticated(false);
           setAuthError("Invalid master password. Please re-enter.");
         }
       } finally {
@@ -110,14 +109,14 @@ function App() {
 
     const debounceTimer = setTimeout(searchEntries, 200);
     return () => clearTimeout(debounceTimer);
-  }, [query, view, isAuthenticated]); // Dependency on isAuthenticated
+  }, [query, view, isAuthenticated]);
 
   const checkMasterPassword = async () => {
     try {
       const exists = await invoke<boolean>("has_master_password");
       setHasMasterPassword(exists);
       if (!exists) {
-        setIsAuthenticated(false); // If no master password, user is not authenticated
+        setIsAuthenticated(false);
       }
     } catch (error) {
       console.error("Failed to check master password:", error);
@@ -140,8 +139,8 @@ function App() {
     try {
       await invoke("setup_master_password", { password: newMasterPassword });
       setHasMasterPassword(true);
-      setMasterPassword(newMasterPassword); // Store the master password once set up
-      setIsAuthenticated(true); // Authenticate after successful setup
+      setMasterPassword(newMasterPassword);
+      setIsAuthenticated(true);
       setNewMasterPassword("");
       setConfirmMasterPassword("");
       setAuthError("");
@@ -164,7 +163,7 @@ function App() {
       await invoke("verify_master_password", {
         password: masterPassword,
       });
-      setIsAuthenticated(true); // Set authenticated on successful verification
+      setIsAuthenticated(true);
       setAuthError("");
     } catch (error) {
       console.log(error);
@@ -175,7 +174,7 @@ function App() {
 
   // Keyboard navigation for search view
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (!isAuthenticated) return; // Only allow if authenticated
+    if (!isAuthenticated) return;
 
     switch (e.key) {
       case "ArrowDown":
@@ -189,13 +188,22 @@ function App() {
       case "Enter":
         e.preventDefault();
         if (entries[selectedIndex]) {
-          copyPassword(entries[selectedIndex].id);
+          // Auto-fill both username and password
+          autoFillCredentials(entries[selectedIndex].id);
         }
         break;
       case "Tab":
         e.preventDefault();
         if (entries[selectedIndex]) {
-          copyUsername(entries[selectedIndex].username);
+          // Type only username
+          typeUsername(entries[selectedIndex].id);
+        }
+        break;
+      case " ": // Spacebar
+        e.preventDefault();
+        if (entries[selectedIndex]) {
+          // Type only password
+          typePassword(entries[selectedIndex].id);
         }
         break;
       case "Escape":
@@ -219,15 +227,15 @@ function App() {
     }
   };
 
-  const copyPassword = async (entryId: number) => {
+  // NEW DIRECT INPUT FUNCTIONS
+  const typeUsername = async (entryId: number) => {
     if (!isAuthenticated) return;
     try {
-      await invoke("copy_password", { entryId, masterPassword });
-      showNotification("Password copied to clipboard");
-      hideWindow();
+      await invoke("type_username", { entryId, masterPassword });
+      showNotification("Username typed directly to active field");
     } catch (error) {
-      console.error("Failed to copy password:", error);
-      showNotification("Failed to copy password", "error");
+      console.error("Failed to type username:", error);
+      showNotification("Failed to type username", "error");
       if (error === "Invalid master password") {
         setIsAuthenticated(false);
         setAuthError("Invalid master password. Please re-enter.");
@@ -235,15 +243,33 @@ function App() {
     }
   };
 
-  const copyUsername = async (username: string) => {
+  const typePassword = async (entryId: number) => {
     if (!isAuthenticated) return;
     try {
-      await invoke("copy_username", { username });
-      showNotification("Username copied to clipboard");
-      hideWindow();
+      await invoke("type_password", { entryId, masterPassword });
+      showNotification("Password typed directly to active field");
     } catch (error) {
-      console.error("Failed to copy username:", error);
-      showNotification("Failed to copy username", "error");
+      console.error("Failed to type password:", error);
+      showNotification("Failed to type password", "error");
+      if (error === "Invalid master password") {
+        setIsAuthenticated(false);
+        setAuthError("Invalid master password. Please re-enter.");
+      }
+    }
+  };
+
+  const autoFillCredentials = async (entryId: number) => {
+    if (!isAuthenticated) return;
+    try {
+      await invoke("auto_fill_credentials", { entryId, masterPassword });
+      showNotification("Credentials auto-filled to login form");
+    } catch (error) {
+      console.error("Failed to auto-fill credentials:", error);
+      showNotification("Failed to auto-fill credentials", "error");
+      if (error === "Invalid master password") {
+        setIsAuthenticated(false);
+        setAuthError("Invalid master password. Please re-enter.");
+      }
     }
   };
 
@@ -280,16 +306,15 @@ function App() {
     setFormData({
       title: entry.title,
       username: entry.username,
-      // Do not pre-fill password for security
       password: "",
       url: entry.url || "",
       notes: entry.notes || "",
     });
-    setShowPassword(false); // Hide password by default
-    setEditPasswordAuth(""); // Clear previous authentication attempt
+    setShowPassword(false);
+    setEditPasswordAuth("");
     setEditAuthError("");
     setTimeout(() => {
-      editPasswordAuthRef.current?.focus(); // Focus on the password authentication input
+      editPasswordAuthRef.current?.focus();
     }, 100);
   };
 
@@ -341,7 +366,7 @@ function App() {
 
       setView("search");
       resetForm();
-      setQuery(""); // Trigger refresh
+      setQuery("");
     } catch (error) {
       console.error("Failed to save entry:", error);
       showNotification("Failed to save entry", "error");
@@ -358,7 +383,6 @@ function App() {
       await invoke("delete_entry", { id, masterPassword });
       showNotification("Password entry deleted");
 
-      // Explicitly refetch the entries
       const results = await invoke<PasswordEntry[]>("search_entries", {
         query: "",
         masterPassword,
@@ -387,7 +411,6 @@ function App() {
       setFormData((prev) => ({ ...prev, password }));
     } catch (error) {
       console.error("Failed to generate password:", error);
-      // Fallback to client-side generation
       const length = 16;
       const charset =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
@@ -436,7 +459,6 @@ function App() {
       await invoke("verify_master_password", {
         password: editPasswordAuth,
       });
-      // If authentication is successful, fetch the actual password
       if (editingEntry) {
         const entryWithPassword = await invoke<PasswordEntry>(
           "get_entry_by_id",
@@ -451,7 +473,7 @@ function App() {
         }));
       }
       setEditAuthError("");
-      setShowPassword(true); // Now we can show the password
+      setShowPassword(true);
     } catch (error) {
       console.log(error);
       setEditAuthError("Invalid master password");
@@ -706,28 +728,29 @@ function App() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             className="search-input"
-            disabled={!isAuthenticated} // Disable search if not authenticated
+            disabled={!isAuthenticated}
           />
           <button
             className="add-btn"
             onClick={openAddForm}
             title="Add New Entry (Insert/F2)"
-            disabled={!isAuthenticated} // Disable add if not authenticated
+            disabled={!isAuthenticated}
           >
             +
           </button>
         </div>
 
         <div className="shortcuts">
-          <span className="shortcut">↵ Copy Password</span>
-          <span className="shortcut">Tab Copy Username</span>
+          <span className="shortcut">↵ Auto-Fill Login</span>
+          <span className="shortcut">Tab Type Username</span>
+          <span className="shortcut">Space Type Password</span>
           <span className="shortcut">Insert/F2 Add</span>
           <span className="shortcut">Esc Close</span>
         </div>
       </div>
 
       <div className="results-container">
-        {loading && isAuthenticated ? ( // Only show loading if authenticated
+        {loading && isAuthenticated ? (
           <div className="loading">Searching...</div>
         ) : entries.length === 0 ? (
           <div className="no-results">
@@ -745,7 +768,7 @@ function App() {
                 className={`result-item ${
                   index === selectedIndex ? "selected" : ""
                 }`}
-                onClick={() => copyPassword(entry.id)}
+                onClick={() => autoFillCredentials(entry.id)}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
                 <div className="entry-icon">{getInitials(entry.title)}</div>
@@ -763,9 +786,9 @@ function App() {
                     className="action-btn"
                     onClick={(e) => {
                       e.stopPropagation();
-                      copyUsername(entry.username);
+                      typeUsername(entry.id);
                     }}
-                    title="Copy Username (Tab)"
+                    title="Type Username (Tab)"
                   >
                     👤
                   </button>
@@ -773,11 +796,21 @@ function App() {
                     className="action-btn"
                     onClick={(e) => {
                       e.stopPropagation();
-                      copyPassword(entry.id);
+                      typePassword(entry.id);
                     }}
-                    title="Copy Password (Enter)"
+                    title="Type Password (Space)"
                   >
                     🔑
+                  </button>
+                  <button
+                    className="action-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      autoFillCredentials(entry.id);
+                    }}
+                    title="Auto-Fill Login (Enter)"
+                  >
+                    🚀
                   </button>
                   <button
                     className="action-btn"
