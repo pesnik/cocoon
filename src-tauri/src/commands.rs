@@ -5,8 +5,15 @@ use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_autostart::ManagerExt;
-use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::ShortcutState;
+
+// Add input simulation dependencies
+#[cfg(target_os = "windows")]
+use winapi::um::winuser::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_TAB};
+#[cfg(target_os = "macos")]
+use core_graphics::event::{CGEvent, CGEventTapLocation};
+#[cfg(target_os = "linux")]
+use x11::xlib;
 
 // Security dependencies
 use aes_gcm::{
@@ -60,7 +67,197 @@ impl Default for PasswordStore {
     }
 }
 
-// Security utility functions
+// Input simulation functions
+#[cfg(target_os = "windows")]
+fn simulate_typing(text: &str) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::winuser::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_UNICODE};
+
+    let wide_text: Vec<u16> = OsStr::new(text).encode_wide().collect();
+    
+    for &ch in &wide_text {
+        let mut input = INPUT {
+            type_: INPUT_KEYBOARD,
+            u: unsafe {
+                std::mem::zeroed()
+            },
+        };
+        
+        unsafe {
+            input.u.ki_mut().wVk = 0;
+            input.u.ki_mut().wScan = ch;
+            input.u.ki_mut().dwFlags = KEYEVENTF_UNICODE;
+            input.u.ki_mut().time = 0;
+            input.u.ki_mut().dwExtraInfo = 0;
+            
+            if SendInput(1, &mut input, std::mem::size_of::<INPUT>() as i32) != 1 {
+                return Err("Failed to send input".to_string());
+            }
+        }
+        
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn simulate_typing(text: &str) -> Result<(), String> {
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Failed to create event source")?;
+    
+    for ch in text.chars() {
+        if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 0, true) {
+            event.set_string_from_utf16_unchecked(&[ch as u16]);
+            event.post(CGEventTapLocation::HID);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn simulate_typing(text: &str) -> Result<(), String> {
+    use std::ffi::CString;
+    use std::ptr;
+    
+    unsafe {
+        let display = x11::xlib::XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return Err("Failed to open X11 display".to_string());
+        }
+        
+        for ch in text.chars() {
+            let keycode = ch as u32;
+            
+            // Key press
+            let mut event: x11::xlib::XKeyEvent = std::mem::zeroed();
+            event.type_ = x11::xlib::KeyPress;
+            event.display = display;
+            event.keycode = keycode;
+            event.state = 0;
+            
+            x11::xlib::XSendEvent(
+                display,
+                x11::xlib::PointerWindow,
+                x11::xlib::True,
+                x11::xlib::KeyPressMask,
+                &mut event as *mut _ as *mut x11::xlib::XEvent,
+            );
+            
+            // Key release
+            event.type_ = x11::xlib::KeyRelease;
+            x11::xlib::XSendEvent(
+                display,
+                x11::xlib::PointerWindow,
+                x11::xlib::True,
+                x11::xlib::KeyReleaseMask,
+                &mut event as *mut _ as *mut x11::xlib::XEvent,
+            );
+            
+            x11::xlib::XFlush(display);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        
+        x11::xlib::XCloseDisplay(display);
+    }
+    
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn simulate_tab() -> Result<(), String> {
+    use winapi::um::winuser::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_TAB};
+    
+    let mut inputs = [INPUT {
+        type_: INPUT_KEYBOARD,
+        u: unsafe { std::mem::zeroed() },
+    }; 2];
+    
+    unsafe {
+        // Tab key down
+        inputs[0].u.ki_mut().wVk = VK_TAB as u16;
+        inputs[0].u.ki_mut().dwFlags = 0;
+        
+        // Tab key up
+        inputs[1].u.ki_mut().wVk = VK_TAB as u16;
+        inputs[1].u.ki_mut().dwFlags = KEYEVENTF_KEYUP;
+        
+        if SendInput(2, inputs.as_mut_ptr(), std::mem::size_of::<INPUT>() as i32) != 2 {
+            return Err("Failed to send tab input".to_string());
+        }
+    }
+    
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn simulate_tab() -> Result<(), String> {
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Failed to create event source")?;
+    
+    if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 48, true) {
+        event.post(CGEventTapLocation::HID);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        
+        if let Ok(event_up) = CGEvent::new_keyboard_event(source, 48, false) {
+            event_up.post(CGEventTapLocation::HID);
+        }
+    }
+    
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn simulate_tab() -> Result<(), String> {
+    use std::ptr;
+    
+    unsafe {
+        let display = x11::xlib::XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return Err("Failed to open X11 display".to_string());
+        }
+        
+        let tab_keycode = 23; // Tab keycode on most Linux systems
+        
+        // Tab key press
+        let mut event: x11::xlib::XKeyEvent = std::mem::zeroed();
+        event.type_ = x11::xlib::KeyPress;
+        event.display = display;
+        event.keycode = tab_keycode;
+        
+        x11::xlib::XSendEvent(
+            display,
+            x11::xlib::PointerWindow,
+            x11::xlib::True,
+            x11::xlib::KeyPressMask,
+            &mut event as *mut _ as *mut x11::xlib::XEvent,
+        );
+        
+        // Tab key release
+        event.type_ = x11::xlib::KeyRelease;
+        x11::xlib::XSendEvent(
+            display,
+            x11::xlib::PointerWindow,
+            x11::xlib::True,
+            x11::xlib::KeyReleaseMask,
+            &mut event as *mut _ as *mut x11::xlib::XEvent,
+        );
+        
+        x11::xlib::XFlush(display);
+        x11::xlib::XCloseDisplay(display);
+    }
+    
+    Ok(())
+}
+
+// Security utility functions (keeping existing functions)
 fn generate_key_from_password(password: &str, salt: &[u8]) -> Result<Vec<u8>, String> {
     let argon2 = Argon2::default();
     let mut key = vec![0u8; 32]; // 256-bit key
@@ -161,7 +358,7 @@ fn calculate_password_strength(password: &str) -> u8 {
     score.min(100)
 }
 
-// File system functions
+// File system functions (keeping existing functions)
 fn get_data_file_path() -> Result<PathBuf, String> {
     let app_data_dir = dirs::data_dir()
         .ok_or("Could not find data directory")?
@@ -181,7 +378,7 @@ fn get_master_hash_path() -> Result<PathBuf, String> {
     Ok(app_data_dir.join("master.hash"))
 }
 
-// Authentication functions
+// Authentication functions (keeping existing functions)
 #[tauri::command]
 async fn setup_master_password(password: String) -> Result<(), String> {
     if password.len() < 8 {
@@ -249,7 +446,7 @@ async fn has_master_password() -> Result<bool, String> {
     Ok(hash_path.exists())
 }
 
-// Encrypted store functions
+// Encrypted store functions (keeping existing functions)
 fn save_encrypted_store(store: &EncryptedPasswordStore) -> Result<(), String> {
     let file_path = get_data_file_path()?;
     let content = serde_json::to_string_pretty(store)
@@ -309,6 +506,95 @@ fn save_password_store(store: &PasswordStore, master_password: &str) -> Result<(
     save_encrypted_store(&encrypted_store)
 }
 
+// MODIFIED COMMANDS FOR DIRECT INPUT
+#[tauri::command]
+async fn type_username(
+    entry_id: u32,
+    master_password: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
+
+    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
+        // Hide the window first
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.hide();
+        }
+
+        // Small delay to allow focus to return to target application
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // Type the username directly
+        simulate_typing(&entry.username)?;
+    } else {
+        return Err("Entry not found".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn type_password(
+    entry_id: u32,
+    master_password: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
+
+    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
+        // Hide the window first
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.hide();
+        }
+
+        // Small delay to allow focus to return to target application
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+        // Type the password directly
+        simulate_typing(&entry.password)?;
+    } else {
+        return Err("Entry not found".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn auto_fill_credentials(
+    entry_id: u32,
+    master_password: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
+
+    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
+        // Hide the window first
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.hide();
+        }
+
+        // Small delay to allow focus to return to target application
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // Type username
+        simulate_typing(&entry.username)?;
+        
+        // Tab to password field
+        simulate_tab()?;
+        
+        // Small delay
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        
+        // Type password
+        simulate_typing(&entry.password)?;
+    } else {
+        return Err("Entry not found".to_string());
+    }
+
+    Ok(())
+}
+
+// Keep existing commands (search_entries, add_entry, update_entry, delete_entry, etc.)
 #[tauri::command(async)]
 async fn search_entries(
     query: String,
@@ -411,6 +697,7 @@ async fn delete_entry(id: u32, master_password: String) -> Result<(), String> {
         Err("Entry not found".to_string())
     }
 }
+
 #[tauri::command]
 async fn get_entry_by_id(id: u32, master_password: String) -> Result<PasswordEntry, String> {
     let store = load_password_store(&master_password)?;
@@ -420,55 +707,6 @@ async fn get_entry_by_id(id: u32, master_password: String) -> Result<PasswordEnt
         .into_iter()
         .find(|entry| entry.id == id)
         .ok_or_else(|| "Entry not found".to_string())
-}
-
-#[tauri::command]
-async fn copy_password(
-    entry_id: u32,
-    master_password: String,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let store = load_password_store(&master_password)?;
-
-    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
-        // Use clipboard plugin to copy password directly
-        app_handle
-            .clipboard()
-            .write_text(entry.password.clone())
-            .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
-
-        // Schedule clipboard clear using a separate command
-        let clipboard_handle = app_handle.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(30));
-            let _ = clipboard_handle.clipboard().write_text(String::new());
-        });
-    } else {
-        return Err("Entry not found".to_string());
-    }
-
-    // Hide the window after copying
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.hide();
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn copy_username(username: String, app_handle: tauri::AppHandle) -> Result<(), String> {
-    // Use clipboard plugin to copy username directly
-    app_handle
-        .clipboard()
-        .write_text(username.clone())
-        .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
-
-    // Hide the window after copying
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.hide();
-    }
-
-    Ok(())
 }
 
 #[tauri::command]
@@ -552,8 +790,9 @@ pub fn run() {
             add_entry,
             update_entry,
             delete_entry,
-            copy_password,
-            copy_username,
+            type_username,
+            type_password,
+            auto_fill_credentials,
             generate_password,
             get_entry_by_id,
             export_vault
@@ -573,7 +812,8 @@ pub fn run() {
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
-                let shortcut = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyP);
+                // let shortcut = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyP);
+                let shortcut = Shortcut::new(Some(Modifiers::CONTROL), Code::KeyP);
 
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
