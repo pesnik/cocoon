@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./App.css";
 
@@ -47,9 +48,25 @@ function App() {
   const masterPasswordRef = useRef<HTMLInputElement>(null);
   const editPasswordAuthRef = useRef<HTMLInputElement>(null);
 
-  // Focus management
+  // Enhanced focus management for Spotlight-like behavior
+  useEffect(() => {
+    const unlisten = listen('focus-search-input', () => {
+      // Immediate focus without delay for snappy Spotlight-like experience
+      if (searchInputRef.current && isAuthenticated && view === "search") {
+        searchInputRef.current.focus();
+        searchInputRef.current.select();
+      }
+    });
+
+    return () => {
+      unlisten.then(fn => fn());
+    };
+  }, [isAuthenticated, view]);
+
+  // Enhanced focus management with better timing
   useEffect(() => {
     const focusInput = () => {
+      // Reduced timeout for snappier response
       setTimeout(() => {
         if (view === "search" && isAuthenticated) {
           searchInputRef.current?.focus();
@@ -61,7 +78,7 @@ function App() {
         } else if (!hasMasterPassword) {
           document.getElementById("newMasterPassword")?.focus();
         }
-      }, 100);
+      }, 50); // Reduced from 100ms to 50ms
     };
 
     const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
@@ -77,12 +94,11 @@ function App() {
     };
   }, [view, isAuthenticated, hasMasterPassword]);
 
-  // Check master password existence on app start
+  // Rest of your existing useEffect hooks...
   useEffect(() => {
     checkMasterPassword();
   }, []);
 
-  // Search entries when query changes and authenticated
   useEffect(() => {
     if (view !== "search" || !isAuthenticated) return;
 
@@ -107,10 +123,135 @@ function App() {
       }
     };
 
-    const debounceTimer = setTimeout(searchEntries, 200);
+    const debounceTimer = setTimeout(searchEntries, 150); // Slightly faster debounce
     return () => clearTimeout(debounceTimer);
   }, [query, view, isAuthenticated]);
 
+  // Enhanced keyboard navigation with better Spotlight-like shortcuts
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (!isAuthenticated) return;
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setSelectedIndex((prev) => Math.min(prev + 1, entries.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setSelectedIndex((prev) => Math.max(prev - 1, 0));
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (entries[selectedIndex]) {
+          // Auto-fill with enhanced focus management
+          autoFillCredentials(entries[selectedIndex].id);
+        }
+        break;
+      case "Tab":
+        e.preventDefault();
+        if (entries[selectedIndex]) {
+          // Type username with enhanced focus management
+          typeUsername(entries[selectedIndex].id);
+        }
+        break;
+      case " ": // Spacebar
+        e.preventDefault();
+        if (entries[selectedIndex]) {
+          // Type password with enhanced focus management
+          typePassword(entries[selectedIndex].id);
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        hideWindow();
+        break;
+      case "Insert":
+      case "F2":
+        e.preventDefault();
+        openAddForm();
+        break;
+      // Enhanced shortcuts for better UX
+      case "Delete":
+      case "Backspace":
+        if (e.metaKey || e.ctrlKey) { // Cmd+Delete or Ctrl+Delete
+          e.preventDefault();
+          if (entries[selectedIndex]) {
+            handleDelete(entries[selectedIndex].id);
+          }
+        }
+        break;
+      case "e":
+        if (e.metaKey || e.ctrlKey) { // Cmd+E or Ctrl+E to edit
+          e.preventDefault();
+          if (entries[selectedIndex]) {
+            openEditForm(entries[selectedIndex]);
+          }
+        }
+        break;
+    }
+  };
+
+  // Enhanced typing functions using the new Spotlight-aware commands
+  const typeUsername = async (entryId: number) => {
+    if (!isAuthenticated) return;
+    try {
+      await invoke("type_username_spotlight", { entryId, masterPassword });
+      showNotification("Username typed to active field");
+    } catch (error) {
+      console.error("Failed to type username:", error);
+      showNotification("Failed to type username", "error");
+      if (error === "Invalid master password") {
+        setIsAuthenticated(false);
+        setAuthError("Invalid master password. Please re-enter.");
+      }
+    }
+  };
+
+  const typePassword = async (entryId: number) => {
+    if (!isAuthenticated) return;
+    try {
+      await invoke("type_password_spotlight", { entryId, masterPassword });
+      showNotification("Password typed to active field");
+    } catch (error) {
+      console.error("Failed to type password:", error);
+      showNotification("Failed to type password", "error");
+      if (error === "Invalid master password") {
+        setIsAuthenticated(false);
+        setAuthError("Invalid master password. Please re-enter.");
+      }
+    }
+  };
+
+  const autoFillCredentials = async (entryId: number) => {
+    if (!isAuthenticated) return;
+    try {
+      await invoke("auto_fill_credentials_spotlight", { entryId, masterPassword });
+      showNotification("Credentials auto-filled to login form");
+    } catch (error) {
+      console.error("Failed to auto-fill credentials:", error);
+      showNotification("Failed to auto-fill credentials", "error");
+      if (error === "Invalid master password") {
+        setIsAuthenticated(false);
+        setAuthError("Invalid master password. Please re-enter.");
+      }
+    }
+  };
+
+  // Enhanced window hiding with state reset
+  const hideWindow = async () => {
+    try {
+      await appWindow.hide();
+      // Reset state for next usage
+      setQuery("");
+      setSelectedIndex(0);
+      setView("search");
+      resetForm();
+    } catch (error) {
+      console.error("Failed to hide window:", error);
+    }
+  };
+
+  // Rest of your existing functions remain the same...
   const checkMasterPassword = async () => {
     try {
       const exists = await invoke<boolean>("has_master_password");
@@ -169,119 +310,6 @@ function App() {
       console.log(error);
       setAuthError("Invalid master password");
       setMasterPassword("");
-    }
-  };
-
-  // Keyboard navigation for search view
-  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (!isAuthenticated) return;
-
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setSelectedIndex((prev) => Math.min(prev + 1, entries.length - 1));
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setSelectedIndex((prev) => Math.max(prev - 1, 0));
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (entries[selectedIndex]) {
-          // Auto-fill both username and password
-          autoFillCredentials(entries[selectedIndex].id);
-        }
-        break;
-      case "Tab":
-        e.preventDefault();
-        if (entries[selectedIndex]) {
-          // Type only username
-          typeUsername(entries[selectedIndex].id);
-        }
-        break;
-      case " ": // Spacebar
-        e.preventDefault();
-        if (entries[selectedIndex]) {
-          // Type only password
-          typePassword(entries[selectedIndex].id);
-        }
-        break;
-      case "Escape":
-        e.preventDefault();
-        hideWindow();
-        break;
-      case "Insert":
-      case "F2":
-        e.preventDefault();
-        openAddForm();
-        break;
-    }
-  };
-
-  // Form keyboard navigation
-  const handleFormKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      setView("search");
-      resetForm();
-    }
-  };
-
-  // NEW DIRECT INPUT FUNCTIONS
-  const typeUsername = async (entryId: number) => {
-    if (!isAuthenticated) return;
-    try {
-      await invoke("type_username", { entryId, masterPassword });
-      showNotification("Username typed directly to active field");
-    } catch (error) {
-      console.error("Failed to type username:", error);
-      showNotification("Failed to type username", "error");
-      if (error === "Invalid master password") {
-        setIsAuthenticated(false);
-        setAuthError("Invalid master password. Please re-enter.");
-      }
-    }
-  };
-
-  const typePassword = async (entryId: number) => {
-    if (!isAuthenticated) return;
-    try {
-      await invoke("type_password", { entryId, masterPassword });
-      showNotification("Password typed directly to active field");
-    } catch (error) {
-      console.error("Failed to type password:", error);
-      showNotification("Failed to type password", "error");
-      if (error === "Invalid master password") {
-        setIsAuthenticated(false);
-        setAuthError("Invalid master password. Please re-enter.");
-      }
-    }
-  };
-
-  const autoFillCredentials = async (entryId: number) => {
-    if (!isAuthenticated) return;
-    try {
-      await invoke("auto_fill_credentials", { entryId, masterPassword });
-      showNotification("Credentials auto-filled to login form");
-    } catch (error) {
-      console.error("Failed to auto-fill credentials:", error);
-      showNotification("Failed to auto-fill credentials", "error");
-      if (error === "Invalid master password") {
-        setIsAuthenticated(false);
-        setAuthError("Invalid master password. Please re-enter.");
-      }
-    }
-  };
-
-  const hideWindow = async () => {
-    try {
-      await appWindow.hide();
-      setQuery("");
-      setSelectedIndex(0);
-      setView("search");
-      resetForm();
-    } catch (error) {
-      console.error("Failed to hide window:", error);
     }
   };
 
@@ -482,37 +510,52 @@ function App() {
     }
   };
 
+  // Form keyboard navigation
+  const handleFormKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setView("search");
+      resetForm();
+    }
+  };
+
   // Render logic based on authentication and view state
   if (!hasMasterPassword) {
     return (
-      <div className="app">
+      <div className="app spotlight-style">
         <div className="auth-container">
-          <h2>Setup Master Password</h2>
-          <form onSubmit={setupMasterPassword}>
+          <div className="auth-header">
+            <h2>🔒 Setup Master Password</h2>
+            <p>Secure your password vault with a master password</p>
+          </div>
+          <form onSubmit={setupMasterPassword} className="auth-form">
             <div className="form-group">
-              <label htmlFor="newMasterPassword">Master Password</label>
               <input
                 id="newMasterPassword"
                 type="password"
                 value={newMasterPassword}
                 onChange={(e) => setNewMasterPassword(e.target.value)}
-                placeholder="Enter master password (min 8 chars)"
+                placeholder="Master password (min 8 chars)"
+                className="spotlight-input"
                 required
+                autoFocus
               />
             </div>
             <div className="form-group">
-              <label htmlFor="confirmMasterPassword">Confirm Password</label>
               <input
                 id="confirmMasterPassword"
                 type="password"
                 value={confirmMasterPassword}
                 onChange={(e) => setConfirmMasterPassword(e.target.value)}
                 placeholder="Confirm master password"
+                className="spotlight-input"
                 required
               />
             </div>
-            {authError && <div className="error">{authError}</div>}
-            <button type="submit">Setup Master Password</button>
+            {authError && <div className="error-message">{authError}</div>}
+            <button type="submit" className="spotlight-button primary">
+              Create Vault
+            </button>
           </form>
         </div>
       </div>
@@ -521,12 +564,14 @@ function App() {
 
   if (!isAuthenticated) {
     return (
-      <div className="app">
+      <div className="app spotlight-style">
         <div className="auth-container">
-          <h2>Enter Master Password</h2>
-          <form onSubmit={authenticate}>
+          <div className="auth-header">
+            <h2>🔓 Enter Master Password</h2>
+            <p>Unlock your password vault</p>
+          </div>
+          <form onSubmit={authenticate} className="auth-form">
             <div className="form-group">
-              <label htmlFor="masterPassword">Master Password</label>
               <input
                 ref={masterPasswordRef}
                 id="masterPassword"
@@ -537,11 +582,15 @@ function App() {
                   setAuthError("");
                 }}
                 placeholder="Enter master password"
+                className="spotlight-input"
                 required
+                autoFocus
               />
             </div>
-            {authError && <div className="error">{authError}</div>}
-            <button type="submit">Continue</button>
+            {authError && <div className="error-message">{authError}</div>}
+            <button type="submit" className="spotlight-button primary">
+              Unlock Vault
+            </button>
           </form>
         </div>
       </div>
@@ -550,10 +599,10 @@ function App() {
 
   if (view === "add" || view === "edit") {
     return (
-      <div className="app">
+      <div className="app spotlight-style">
         <div className="form-container">
           <div className="form-header">
-            <h2>{view === "add" ? "Add New Entry" : "Edit Entry"}</h2>
+            <h2>{view === "add" ? "➕ Add New Entry" : "✏️ Edit Entry"}</h2>
             <button
               className="close-btn"
               onClick={() => {
@@ -566,9 +615,8 @@ function App() {
             </button>
           </div>
 
-          <form onSubmit={handleFormSubmit} onKeyDown={handleFormKeyDown}>
+          <form onSubmit={handleFormSubmit} onKeyDown={handleFormKeyDown} className="entry-form">
             <div className="form-group">
-              <label htmlFor="title">Title *</label>
               <input
                 ref={titleInputRef}
                 id="title"
@@ -577,13 +625,14 @@ function App() {
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, title: e.target.value }))
                 }
-                placeholder="e.g., GitHub, Gmail, AWS Console"
+                placeholder="Title (e.g., GitHub, Gmail, AWS Console)"
+                className="spotlight-input"
                 required
+                autoFocus
               />
             </div>
 
             <div className="form-group">
-              <label htmlFor="username">Username/Email *</label>
               <input
                 id="username"
                 type="text"
@@ -591,7 +640,8 @@ function App() {
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, username: e.target.value }))
                 }
-                placeholder="john.doe@example.com"
+                placeholder="Username or Email"
+                className="spotlight-input"
                 required
               />
             </div>
@@ -609,20 +659,22 @@ function App() {
                         setEditAuthError("");
                       }}
                       placeholder="Enter master password to view/edit"
+                      className="spotlight-input"
+                      autoFocus
                     />
                     <button
                       type="button"
                       onClick={handleEditPasswordAuth}
-                      className="auth-password-btn"
+                      className="spotlight-button secondary small"
                     >
                       Unlock
                     </button>
                     {editAuthError && (
-                      <div className="error-small">{editAuthError}</div>
+                      <div className="error-message small">{editAuthError}</div>
                     )}
                   </div>
                 ) : (
-                  <>
+                  <div className="password-field">
                     <input
                       id="password"
                       type={showPassword ? "text" : "password"}
@@ -633,32 +685,34 @@ function App() {
                           password: e.target.value,
                         }))
                       }
-                      placeholder="Enter password"
+                      placeholder="Password"
+                      className="spotlight-input"
                       required
                     />
-                    <button
-                      type="button"
-                      className="toggle-password-btn"
-                      onClick={() => setShowPassword(!showPassword)}
-                      title={showPassword ? "Hide Password" : "Show Password"}
-                    >
-                      {showPassword ? "👁️" : "🙈"}
-                    </button>
-                    <button
-                      type="button"
-                      className="generate-btn"
-                      onClick={generatePassword}
-                      title="Generate Password"
-                    >
-                      🎲
-                    </button>
-                  </>
+                    <div className="password-actions">
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => setShowPassword(!showPassword)}
+                        title={showPassword ? "Hide Password" : "Show Password"}
+                      >
+                        {showPassword ? "🙈" : "👁️"}
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={generatePassword}
+                        title="Generate Password"
+                      >
+                        🎲
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
 
             <div className="form-group">
-              <label htmlFor="url">URL</label>
               <input
                 id="url"
                 type="url"
@@ -666,19 +720,20 @@ function App() {
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, url: e.target.value }))
                 }
-                placeholder="https://example.com"
+                placeholder="URL (optional)"
+                className="spotlight-input"
               />
             </div>
 
             <div className="form-group">
-              <label htmlFor="notes">Notes</label>
               <textarea
                 id="notes"
                 value={formData.notes}
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, notes: e.target.value }))
                 }
-                placeholder="Additional notes..."
+                placeholder="Notes (optional)"
+                className="spotlight-textarea"
                 rows={3}
               />
             </div>
@@ -686,7 +741,7 @@ function App() {
             <div className="form-actions">
               <button
                 type="button"
-                className="cancel-btn"
+                className="spotlight-button secondary"
                 onClick={() => {
                   setView("search");
                   resetForm();
@@ -694,7 +749,7 @@ function App() {
               >
                 Cancel
               </button>
-              <button type="submit" className="save-btn">
+              <button type="submit" className="spotlight-button primary">
                 {view === "add" ? "Add Entry" : "Update Entry"}
               </button>
             </div>
@@ -705,21 +760,10 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app spotlight-style">
       <div className="search-container">
         <div className="search-box">
-          <svg
-            className="search-icon"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.35-4.35" />
-          </svg>
+          <div className="search-icon">🔍</div>
           <input
             ref={searchInputRef}
             type="text"
@@ -727,38 +771,70 @@ function App() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            className="search-input"
+            className="search-input spotlight-input"
             disabled={!isAuthenticated}
+            autoFocus
           />
           <button
-            className="add-btn"
+            className="add-btn icon-btn"
             onClick={openAddForm}
             title="Add New Entry (Insert/F2)"
             disabled={!isAuthenticated}
           >
-            +
+            ➕
           </button>
         </div>
 
-        <div className="shortcuts">
-          <span className="shortcut">↵ Auto-Fill Login</span>
-          <span className="shortcut">Tab Type Username</span>
-          <span className="shortcut">Space Type Password</span>
-          <span className="shortcut">Insert/F2 Add</span>
-          <span className="shortcut">Esc Close</span>
+        <div className="shortcuts-bar">
+          <div className="shortcuts">
+            <span className="shortcut">
+              <kbd>↵</kbd> Auto-Fill
+            </span>
+            <span className="shortcut">
+              <kbd>Tab</kbd> Username
+            </span>
+            <span className="shortcut">
+              <kbd>Space</kbd> Password
+            </span>
+            <span className="shortcut">
+              <kbd>⌘E</kbd> Edit
+            </span>
+            <span className="shortcut">
+              <kbd>Esc</kbd> Close
+            </span>
+          </div>
         </div>
       </div>
 
       <div className="results-container">
         {loading && isAuthenticated ? (
-          <div className="loading">Searching...</div>
+          <div className="loading-state">
+            <div className="loading-spinner"></div>
+            <span>Searching...</span>
+          </div>
         ) : entries.length === 0 ? (
           <div className="no-results">
-            {isAuthenticated
-              ? query
-                ? "No passwords found"
-                : "Start typing to search or press Insert to add a new entry..."
-              : "Please enter your master password to get started."}
+            {isAuthenticated ? (
+              query ? (
+                <div className="empty-state">
+                  <div className="empty-icon">🔍</div>
+                  <h3>No passwords found</h3>
+                  <p>Try a different search term or add a new entry</p>
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-icon">🔐</div>
+                  <h3>Your vault is ready</h3>
+                  <p>Start typing to search or press <kbd>Insert</kbd> to add your first password</p>
+                </div>
+              )
+            ) : (
+              <div className="empty-state">
+                <div className="empty-icon">🔒</div>
+                <h3>Please authenticate</h3>
+                <p>Enter your master password to access your vault</p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="results-list">
@@ -771,7 +847,9 @@ function App() {
                 onClick={() => autoFillCredentials(entry.id)}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
-                <div className="entry-icon">{getInitials(entry.title)}</div>
+                <div className="entry-icon">
+                  {getInitials(entry.title)}
+                </div>
                 <div className="entry-content">
                   <div className="entry-title">
                     {highlightMatch(entry.title, query)}
@@ -779,7 +857,11 @@ function App() {
                   <div className="entry-username">
                     {highlightMatch(entry.username, query)}
                   </div>
-                  {entry.url && <div className="entry-url">{entry.url}</div>}
+                  {entry.url && (
+                    <div className="entry-url">
+                      {highlightMatch(entry.url, query)}
+                    </div>
+                  )}
                 </div>
                 <div className="entry-actions">
                   <button
@@ -803,7 +885,7 @@ function App() {
                     🔑
                   </button>
                   <button
-                    className="action-btn"
+                    className="action-btn primary"
                     onClick={(e) => {
                       e.stopPropagation();
                       autoFillCredentials(entry.id);
@@ -818,17 +900,17 @@ function App() {
                       e.stopPropagation();
                       openEditForm(entry);
                     }}
-                    title="Edit Entry"
+                    title="Edit Entry (⌘E)"
                   >
                     ✏️
                   </button>
                   <button
-                    className="action-btn delete"
+                    className="action-btn danger"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDelete(entry.id);
                     }}
-                    title="Delete Entry"
+                    title="Delete Entry (⌘Delete)"
                   >
                     🗑️
                   </button>
