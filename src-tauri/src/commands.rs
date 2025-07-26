@@ -180,6 +180,163 @@ fn simulate_typing_with_focus_restore(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn simulate_enter() -> Result<(), String> {
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Failed to create event source")?;
+
+    // Enter key press (keycode 36 on macOS)
+    if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 36, true) {
+        event.post(CGEventTapLocation::HID);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Enter key release
+        if let Ok(event_up) = CGEvent::new_keyboard_event(source, 36, false) {
+            event_up.post(CGEventTapLocation::HID);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn simulate_enter() -> Result<(), String> {
+    use winapi::um::winuser::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_RETURN};
+
+    let mut input_down = INPUT {
+        type_: INPUT_KEYBOARD,
+        u: unsafe { std::mem::zeroed() },
+    };
+
+    let mut input_up = INPUT {
+        type_: INPUT_KEYBOARD,
+        u: unsafe { std::mem::zeroed() },
+    };
+
+    unsafe {
+        // Enter key down
+        input_down.u.ki_mut().wVk = VK_RETURN as u16;
+        input_down.u.ki_mut().dwFlags = 0;
+
+        // Enter key up
+        input_up.u.ki_mut().wVk = VK_RETURN as u16;
+        input_up.u.ki_mut().dwFlags = KEYEVENTF_KEYUP;
+
+        if SendInput(1, &mut input_down, std::mem::size_of::<INPUT>() as i32) != 1 {
+            return Err("Failed to send enter key down".to_string());
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        if SendInput(1, &mut input_up, std::mem::size_of::<INPUT>() as i32) != 1 {
+            return Err("Failed to send enter key up".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn simulate_enter() -> Result<(), String> {
+    use std::ptr;
+
+    unsafe {
+        let display = x11::xlib::XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return Err("Failed to open X11 display".to_string());
+        }
+
+        let enter_keycode = 36; // Enter key on most X11 systems
+
+        // Key press
+        let mut event: x11::xlib::XKeyEvent = std::mem::zeroed();
+        event.type_ = x11::xlib::KeyPress;
+        event.display = display;
+        event.keycode = enter_keycode;
+        event.state = 0;
+
+        x11::xlib::XSendEvent(
+            display,
+            x11::xlib::PointerWindow,
+            x11::xlib::True,
+            x11::xlib::KeyPressMask,
+            &mut event as *mut _ as *mut x11::xlib::XEvent,
+        );
+
+        // Key release
+        event.type_ = x11::xlib::KeyRelease;
+        x11::xlib::XSendEvent(
+            display,
+            x11::xlib::PointerWindow,
+            x11::xlib::True,
+            x11::xlib::KeyReleaseMask,
+            &mut event as *mut _ as *mut x11::xlib::XEvent,
+        );
+
+        x11::xlib::XFlush(display);
+        x11::xlib::XCloseDisplay(display);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn auto_fill_and_login_spotlight(
+    entry_id: u32,
+    master_password: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
+
+    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
+        // Hide Cocoon window
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.hide();
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // Restore focus to target application
+            restore_target_focus()?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+
+            // Type credentials and login
+            simulate_typing_with_focus_restore(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing_with_focus_restore(&entry.password)?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            simulate_enter()?; // Press Enter to login
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            simulate_typing(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing(&entry.password)?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            simulate_enter()?; // Press Enter to login
+        }
+    } else {
+        return Err("Entry not found".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn press_enter_after_autofill(_app_handle: tauri::AppHandle) -> Result<(), String> {
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    
+    simulate_enter()?;
+    
+    Ok(())
+}
+
 // Enhanced commands with better focus management
 #[tauri::command]
 async fn type_username_spotlight(
@@ -735,7 +892,61 @@ fn calculate_password_strength(password: &str) -> u8 {
     score.min(100)
 }
 
-// Keep existing commands (search_entries, add_entry, update_entry, delete_entry, etc.)
+#[tauri::command]
+async fn auto_fill_credentials_spotlight_with_login(
+    entry_id: u32,
+    master_password: String,
+    press_enter: bool,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
+
+    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
+        // Hide Cocoon window
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.hide();
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // Restore focus to target application
+            restore_target_focus()?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+
+            // Type credentials
+            simulate_typing_with_focus_restore(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing_with_focus_restore(&entry.password)?;
+            
+            // Optionally press Enter to login
+            if press_enter {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                simulate_enter()?;
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            simulate_typing(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing(&entry.password)?;
+            
+            // Optionally press Enter to login
+            if press_enter {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                simulate_enter()?;
+            }
+        }
+    } else {
+        return Err("Entry not found".to_string());
+    }
+
+    Ok(())
+}
+
 #[tauri::command(async)]
 async fn search_entries(
     query: String,
@@ -947,6 +1158,9 @@ pub fn run() {
             get_entry_by_id,
             export_vault,
             hide_window,
+    auto_fill_and_login_spotlight,
+    press_enter_after_autofill,
+    auto_fill_credentials_spotlight_with_login,
             focus_search_input
         ])
         .setup(|app| {
