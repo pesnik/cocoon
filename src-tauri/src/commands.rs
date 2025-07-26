@@ -9,7 +9,6 @@ use tauri_plugin_global_shortcut::ShortcutState;
 
 #[cfg(target_os = "macos")]
 use core_graphics::event::{CGEvent, CGEventTapLocation};
-use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 
 // macOS NSPanel imports
 #[cfg(target_os = "macos")]
@@ -81,7 +80,6 @@ impl Default for PasswordStore {
 #[derive(Clone)]
 struct FocusState {
     target_app_pid: Option<u32>,
-    target_element_info: Option<String>,
     last_active_window: Option<String>,
 }
 
@@ -89,7 +87,6 @@ struct FocusState {
 lazy_static::lazy_static! {
     static ref FOCUS_STATE: Arc<Mutex<FocusState>> = Arc::new(Mutex::new(FocusState {
         target_app_pid: None,
-        target_element_info: None,
         last_active_window: None,
     }));
 }
@@ -98,7 +95,7 @@ lazy_static::lazy_static! {
 #[cfg(target_os = "macos")]
 fn capture_current_focus() -> Result<(), String> {
     unsafe {
-        use objc2_app_kit::{NSRunningApplication, NSWorkspace};
+        use objc2_app_kit::NSWorkspace;
 
         let workspace = NSWorkspace::sharedWorkspace();
         if let Some(front_app) = workspace.frontmostApplication() {
@@ -286,34 +283,6 @@ async fn auto_fill_credentials_spotlight(
     Ok(())
 }
 
-// macOS NSPanel configuration function - MINIMAL AND SAFE
-#[cfg(target_os = "macos")]
-fn configure_nspanel(window: &tauri::WebviewWindow) -> Result<(), String> {
-    unsafe {
-        let ns_window = window
-            .ns_window()
-            .map_err(|e| format!("Failed to get NSWindow: {}", e))?;
-        let ns_window_ptr = ns_window as *mut AnyObject;
-
-        // Set window level to floating (this is the key for staying on top)
-        let _: () = msg_send![ns_window_ptr, setLevel: NSFloatingWindowLevel];
-
-        // Configure collection behavior for fullscreen compatibility
-        let collection_behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
-            | NSWindowCollectionBehavior::Stationary
-            | NSWindowCollectionBehavior::IgnoresCycle;
-        let _: () = msg_send![ns_window_ptr, setCollectionBehavior: collection_behavior.bits()];
-
-        // Basic window configuration - only using standard NSWindow methods
-        let _: () = msg_send![ns_window_ptr, setMovableByWindowBackground: true];
-        let _: () = msg_send![ns_window_ptr, setAcceptsMouseMovedEvents: true];
-
-        // Don't auto-hide on deactivate - we'll handle this manually
-        let _: () = msg_send![ns_window_ptr, setHidesOnDeactivate: false];
-    }
-    Ok(())
-}
-
 // Add a command to focus the search input from the frontend
 #[tauri::command]
 async fn focus_search_input(app_handle: tauri::AppHandle) -> Result<(), String> {
@@ -332,28 +301,6 @@ async fn focus_search_input(app_handle: tauri::AppHandle) -> Result<(), String> 
             }
         }
     }
-    Ok(())
-}
-
-// Enhanced input simulation with better focus management
-#[cfg(target_os = "macos")]
-fn simulate_typing(text: &str) -> Result<(), String> {
-    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-
-    // Small delay to ensure target application is ready
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-        .map_err(|_| "Failed to create event source")?;
-
-    for ch in text.chars() {
-        if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 0, true) {
-            event.set_string_from_utf16_unchecked(&[ch as u16]);
-            event.post(CGEventTapLocation::HID);
-            std::thread::sleep(std::time::Duration::from_millis(15));
-        }
-    }
-
     Ok(())
 }
 
@@ -786,94 +733,6 @@ fn calculate_password_strength(password: &str) -> u8 {
     }
 
     score.min(100)
-}
-
-// MODIFIED COMMANDS FOR DIRECT INPUT
-#[tauri::command]
-async fn type_username(
-    entry_id: u32,
-    master_password: String,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let store = load_password_store(&master_password)?;
-
-    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
-        // Hide the window first
-        if let Some(window) = app_handle.get_webview_window("main") {
-            let _ = window.hide();
-        }
-
-        // Small delay to allow focus to return to target application
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        // Type the username directly
-        simulate_typing(&entry.username)?;
-    } else {
-        return Err("Entry not found".to_string());
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn type_password(
-    entry_id: u32,
-    master_password: String,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let store = load_password_store(&master_password)?;
-
-    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
-        // Hide the window first
-        if let Some(window) = app_handle.get_webview_window("main") {
-            let _ = window.hide();
-        }
-
-        // Small delay to allow focus to return to target application
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-
-        // Type the password directly
-        simulate_typing(&entry.password)?;
-    } else {
-        return Err("Entry not found".to_string());
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn auto_fill_credentials(
-    entry_id: u32,
-    master_password: String,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let store = load_password_store(&master_password)?;
-
-    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
-        // Hide the window first
-        if let Some(window) = app_handle.get_webview_window("main") {
-            let _ = window.hide();
-        }
-
-        // Small delay to allow focus to return to target application
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        // Type username
-        simulate_typing(&entry.username)?;
-
-        // Tab to password field
-        simulate_tab()?;
-
-        // Small delay
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        // Type password
-        simulate_typing(&entry.password)?;
-    } else {
-        return Err("Entry not found".to_string());
-    }
-
-    Ok(())
 }
 
 // Keep existing commands (search_entries, add_entry, update_entry, delete_entry, etc.)
