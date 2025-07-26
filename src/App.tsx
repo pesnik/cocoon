@@ -225,7 +225,7 @@ function App() {
   const autoFillCredentials = async (entryId: number) => {
     if (!isAuthenticated) return;
     try {
-      await invoke("auto_fill_credentials_spotlight", { entryId, masterPassword });
+      await invoke("auto_fill_credentials_spotlight_with_login", { entryId, masterPassword, pressEnter: true });
       showNotification("Credentials auto-filled to login form");
     } catch (error) {
       console.error("Failed to auto-fill credentials:", error);
