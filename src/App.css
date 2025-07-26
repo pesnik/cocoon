@@ -1,451 +1,353 @@
-/* Variables for easy theme adjustments */
 :root {
-  --primary-color: #4361ee;
-  --primary-hover: #3a56d4;
-  --secondary-color: #3f37c9;
-  --danger-color: #f72585;
-  --danger-hover: #e5177b;
-  --success-color: #4cc9f0;
-  --text-color: #2b2d42;
-  --text-light: #8d99ae;
-  --bg-color: #f8f9fa; /* This will be the app's background now */
-  --bg-secondary: #edf2f4;
-  --border-color: #e9ecef;
-  --highlight-color: #ffd166;
-  --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  --transition: all 0.2s ease;
+  --primary: #6c5ce7;
+  --primary-dark: #5649c0;
+  --secondary: #00cec9;
+  --danger: #ff7675;
+  --warning: #fdcb6e;
+  --success: #55efc4;
+  --text-primary: #f5f6fa;
+  --text-secondary: #dfe6e9;
+  --bg-primary: #1e272e;
+  --bg-secondary: #2d3436;
+  --bg-tertiary: #3c4248;
+  --border-radius: 12px;
+  --box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 * {
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-/* Ensure html, body, and the root React div fill the entire viewport */
-html, body, #root { /* Assuming your root React element is <div id="root"></div> */
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden; /* Prevent native scrollbars on the browser window */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell,
-                'Open Sans', 'Helvetica Neue', sans-serif;
-  color: var(--text-color);
-  background-color: var(--bg-color); /* Body's background is now the app's overall background */
-  line-height: 1.5;
-  font-size: 16px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Body itself becomes the container for the full-screen app */
-  display: flex;
-  flex-direction: column; /* Allows content within body (which is essentially just .app) to stack */
-  width: 100%;
-  height: 100%;
 }
 
-/* App Container - now truly acts as the 'body' of your application */
 .app {
-  width: 100%; /* Take full width of the body */
-  height: 100%; /* Take full height of the body */
-  max-width: none; /* Crucial: Remove any max-width constraints */
-  margin: 0; /* Crucial: Remove any auto margins that cause centering */
-  padding: 1rem; /* This padding will be the 'outer' padding of your app content */
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: var(--bg-color); /* Inherit the overall background */
-  border-radius: 0; /* Remove border-radius as it's full screen */
-  box-shadow: none; /* Remove box-shadow as it's full screen */
-  overflow: hidden; /* Important for containing scrolling children without app scrollbars */
 }
 
+/* Override .app styles for full-screen form */
+.app:has(.form-container) {
+  max-width: 100vw;
+  width: 100vw;
+  padding: 0;
+  margin: 0;
+}
+
+/* Auth Containers */
+.auth-container {
+  background: var(--bg-secondary);
+  border-radius: var(--border-radius);
+  padding: 2rem;
+  max-width: 500px;
+  margin: 2rem auto;
+  box-shadow: var(--box-shadow);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Full-screen form container for add/edit views */
+.form-container {
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(45, 52, 54, 0.95) 100%);
+  width: 100vw;
+  min-height: 100vh;
+  margin: 0;
+  padding: 3rem 2rem;
+  border-radius: 0;
+  box-shadow: none;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+/* Forms */
+.auth-form, .entry-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.spotlight-input, .spotlight-textarea {
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--border-radius);
+  padding: 1rem 1.25rem;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  transition: var(--transition);
+  width: 100%;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.spotlight-input:focus, .spotlight-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.spotlight-textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+/* Buttons */
+.spotlight-button {
+  padding: 0.85rem 2rem;
+  border-radius: var(--border-radius);
+  border: none;
+  font-weight: 600;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.spotlight-button.primary {
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 4px 12px rgba(108, 92, 231, 0.3);
+}
+
+.spotlight-button.primary:hover {
+  background: var(--primary-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(108, 92, 231, 0.4);
+}
+
+.spotlight-button.secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.spotlight-button.secondary:hover {
+  background: #4a525a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.spotlight-button.small {
+  padding: 0.6rem 1.2rem;
+  font-size: 0.95rem;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1.3rem;
+  padding: 0.6rem;
+  border-radius: 50%;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.action-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.action-btn.primary {
+  background: rgba(108, 92, 231, 0.2);
+  color: var(--primary);
+}
+
+.action-btn.primary:hover {
+  background: rgba(108, 92, 231, 0.3);
+}
+
+.action-btn.danger {
+  background: rgba(255, 118, 117, 0.2);
+  color: var(--danger);
+}
+
+.action-btn.danger:hover {
+  background: rgba(255, 118, 117, 0.3);
+}
 
 /* Search Container */
 .search-container {
-  margin-bottom: 1rem;
-  position: relative;
-  flex-shrink: 0; /* Prevent this from shrinking when results-container grows */
+  margin-bottom: 1.5rem;
 }
 
 .search-box {
   display: flex;
   align-items: center;
-  background: white;
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  padding: 0.5rem;
-  transition: var(--transition);
-  border: 1px solid var(--border-color);
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
-}
-
-.search-input:focus,
-.search-input:focus-visible {
-  outline: none;
+  background: var(--bg-secondary);
+  border-radius: var(--border-radius);
+  padding: 0.5rem 1rem;
+  box-shadow: var(--box-shadow);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .search-icon {
-  margin: 0 0.5rem;
-  color: var(--text-light);
+  font-size: 1.2rem;
+  margin-right: 0.75rem;
+  opacity: 0.7;
 }
 
 .search-input {
   flex: 1;
-  border: none;
-  padding: 0.75rem 0.5rem;
-  font-size: 1rem;
-  outline: none;
   background: transparent;
-  color: var(--text-color);
+  border: none;
+  padding: 0.75rem 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
 }
 
-.search-input::placeholder {
-  color: var(--text-light);
+.search-input:focus {
+  outline: none;
 }
 
 .add-btn {
-  background: var(--primary-color);
+  margin-left: 0.5rem;
+  background: var(--primary);
   color: white;
-  border: none;
-  border-radius: 6px;
-  width: 36px;
-  height: 36px;
-  font-size: 1.25rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: var(--transition);
-  flex-shrink: 0; /* Important */
+  font-weight: 600;
+  font-size: 1.2rem;
 }
 
 .add-btn:hover {
-  background: var(--primary-hover);
-  transform: scale(1.05);
+  background: var(--primary-dark);
+  transform: scale(1.1);
+  box-shadow: 0 0 8px rgba(108, 92, 231, 0.5);
 }
 
-/* Shortcuts */
+/* Shortcuts Bar */
+.shortcuts-bar {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: center;
+}
+
 .shortcuts {
   display: flex;
-  gap: 1rem;
-  margin-top: 0.75rem;
-  font-size: 0.8rem;
-  color: var(--text-light);
-  flex-wrap: wrap;
-  flex-shrink: 0; /* Important */
+  gap: 1.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
 }
 
 .shortcut {
   display: flex;
   align-items: center;
   gap: 0.25rem;
+  color: var(--text-secondary);
+}
+
+kbd {
+  background: var(--bg-tertiary);
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--text-primary);
 }
 
 /* Results Container */
 .results-container {
-  flex: 1; /* Allow this to grow and take remaining space */
-  overflow-y: auto; /* Enable scrolling for results */
-  /* Re-add background and shadow for the inner results list area */
-  background: white;
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  min-height: 0; /* Crucial for flex items with overflow */
-}
-
-.loading, .no-results {
-  padding: 2rem;
-  text-align: center;
-  color: var(--text-light);
-}
-
-.no-results {
-  line-height: 1.6;
+  flex: 1;
 }
 
 .results-list {
-  list-style: none;
-  /* No fixed height needed here, flex-grow on container handles it */
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-/* Result Item */
 .result-item {
+  background: var(--bg-secondary);
+  border-radius: var(--border-radius);
+  padding: 1rem;
   display: flex;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-color);
+  gap: 1rem;
   cursor: pointer;
   transition: var(--transition);
-  gap: 1rem;
-}
-
-.result-item:last-child {
-  border-bottom: none;
+  border: 1px solid transparent;
 }
 
 .result-item:hover {
-  background: var(--bg-secondary);
+  background: var(--bg-tertiary);
+  transform: translateY(-1px);
 }
 
 .result-item.selected {
-  background: rgba(67, 97, 238, 0.1);
-}
-/* Authentication Container Styles */
-
-.auth-container {
-  background: white;
-  border-radius: 0; /* Remove border radius for full body */
-  box-shadow: none; /* Remove shadow for full body */
-  padding: 2rem;
-  width: 100%;
-  max-width: none; /* Remove max-width constraint */
-  margin: 0; /* Remove margin */
-  height: 100%; /* Take full height */
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  animation: slideInFromBottom 0.4s ease-out;
+  border-color: var(--primary);
+  background: var(--bg-tertiary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.auth-container h2 {
-  color: var(--text-color);
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-bottom: 1.5rem;
-  text-align: center;
-}
-
-/* Auth Form Styles */
-.auth-container form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  width: 100%;
-  max-width: 400px; /* Limit form width for better UX */
-}
-
-/* Error Message Styles */
-.error {
-  color: var(--danger-color);
-  font-size: 0.875rem;
-  margin-top: 0.5rem;
-  margin-bottom: 1rem;
-  padding: 0.75rem;
-  background: rgba(247, 37, 133, 0.1);
-  border: 1px solid rgba(247, 37, 133, 0.2);
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.error::before {
-  content: '⚠️';
-  font-size: 1rem;
-  flex-shrink: 0;
-}
-
-/* Auth Form Styles */
-.auth-container .form-group {
-  margin-bottom: 1.25rem;
-}
-
-.auth-container .form-group:last-of-type {
-  margin-bottom: 0;
-}
-
-.auth-container .form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: var(--text-color);
-}
-
-.auth-container .form-group input {
-  width: 100%;
-  padding: 0.875rem 1rem;
-  border: 2px solid var(--border-color);
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: var(--transition);
-  background: white;
-}
-
-.auth-container .form-group input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
-}
-
-.auth-container .form-group input.error {
-  border-color: var(--danger-color);
-  box-shadow: 0 0 0 3px rgba(247, 37, 133, 0.1);
-}
-
-/* Auth Submit Button */
-.auth-container button[type="submit"] {
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 0.875rem 1.5rem;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: var(--transition);
-  position: relative;
-  overflow: hidden;
-  margin-top: 0.5rem;
-}
-
-.auth-container button[type="submit"]:hover {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 15px rgba(67, 97, 238, 0.3);
-}
-
-.auth-container button[type="submit"]:active {
-  transform: translateY(0);
-}
-
-.auth-container button[type="submit"]:disabled {
-  background: var(--text-light);
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-/* Loading state for auth buttons */
-.auth-container button[type="submit"].loading {
-  background: var(--primary-color);
-  cursor: not-allowed;
-  padding-left: 2.5rem;
-}
-
-.auth-container button[type="submit"].loading::before {
-  content: '';
-  position: absolute;
-  left: 0.875rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top: 2px solid white;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-/* Lock Button Styles */
-.lock-btn {
-  background: var(--secondary-color);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: var(--transition);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: 0.5rem;
-}
-
-.lock-btn:hover {
-  background: var(--primary-color);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
-}
-
-.lock-btn:active {
-  transform: translateY(0);
-}
-
-/* Additional Animations */
-@keyframes slideInFromBottom {
-  from { 
-    opacity: 0;
-    transform: translateY(30px) scale(0.95);
-  }
-  to { 
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes spin {
-  from { transform: translateY(-50%) rotate(0deg); }
-  to { transform: translateY(-50%) rotate(360deg); }
-}
-
-@keyframes unlockSuccess {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); background: var(--success-color); }
-  100% { transform: scale(1); background: var(--primary-color); }
-}
-
-/* Responsive Design for Authentication */
-@media (max-width: 600px) {
-  .auth-container {
-    padding: 1.5rem;
-    margin: 1rem;
-    border-radius: 8px;
-  }
-  
-  .auth-container h2 {
-    font-size: 1.25rem;
-  }
-  
-  .auth-container button[type="submit"] {
-    padding: 1rem 1.5rem;
-    font-size: 1.05rem;
-  }
-  
-  .lock-btn {
-    padding: 0.75rem;
-    font-size: 0.9rem;
-  }
-}
-
-/* Focus styles for accessibility */
-.auth-container button[type="submit"]:focus-visible {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 2px;
-}
-
-.auth-container input:focus-visible {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 2px;
-}
-
-.lock-btn:focus-visible {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 2px;
-}
 .entry-icon {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--primary-color);
+  background: var(--primary);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  font-size: 0.9rem;
   flex-shrink: 0;
 }
 
 .entry-content {
   flex: 1;
-  min-width: 0; /* Prevent overflow */
+  min-width: 0;
 }
 
 .entry-title {
@@ -456,183 +358,83 @@ body {
   text-overflow: ellipsis;
 }
 
-.entry-username {
-  color: var(--text-light);
-  font-size: 0.9rem;
+.entry-username, .entry-url {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .entry-url {
-  color: var(--primary-color);
-  font-size: 0.8rem;
   margin-top: 0.25rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  opacity: 0.7;
 }
 
-.highlight {
-  background-color: var(--highlight-color);
-  padding: 0 1px;
-  border-radius: 2px;
-}
-
-/* Entry Actions */
 .entry-actions {
   display: flex;
   gap: 0.5rem;
-  opacity: 0;
-  transition: var(--transition);
-  flex-shrink: 0; /* Prevent actions from shrinking */
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
-/* Password Input Group */
+.highlight {
+  background: rgba(108, 92, 231, 0.3);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* Password Field */
 .password-input-group {
   position: relative;
-  width: 100%;
 }
 
-/* Password Auth Overlay */
+.password-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.password-field input {
+  flex: 1;
+}
+
+.password-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
 .password-auth-overlay {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  width: 100%;
+  gap: 0.5rem;
 }
 
-.password-auth-overlay input {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 1rem;
-  box-sizing: border-box; /* Ensures padding doesn't affect width */
-}
-
-.password-auth-overlay input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
-}
-
-.auth-password-btn {
-  width: 100%;
-  padding: 0.75rem;
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.auth-password-btn:hover {
-  background-color: var(--primary-hover);
-}
-
-.error-small {
-  color: var(--danger-color);
-  font-size: 0.8rem;
-  margin-top: 4px;
-}
-
-.toggle-password-btn {
-  position: absolute;
-  right: 40px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 4px;
-  z-index: 1;
-}
-
-.generate-btn {
-  position: absolute;
-  right: 8px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 4px;
-  z-index: 1;
-}
-
-.result-item:hover .entry-actions,
-.result-item.selected .entry-actions {
-  opacity: 1;
-}
-
-.action-btn {
-  background: none;
-  border: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: var(--transition);
-  color: var(--text-light);
-  font-size: 1rem;
-}
-
-.action-btn:hover {
-  background: var(--bg-secondary);
-  color: var(--primary-color);
-  transform: scale(1.1);
-}
-
-.action-btn.delete:hover {
-  color: var(--danger-color);
-  background: rgba(247, 37, 133, 0.1);
-}
-
-/* Form Styles */
-.form-container {
-  position: absolute; /* Position it relative to the .app (body) */
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: white; /* Form background will be solid white */
-  border-radius: 0; /* No border-radius for full-screen form */
-  box-shadow: none; /* No shadow for full-screen form */
-  display: flex;
-  flex-direction: column;
-  z-index: 1000; /* Ensure it's on top of other content */
-  animation: slideInFromRight 0.3s ease-out forwards; /* Add animation for appearance */
-}
-
+/* Form Header */
 .form-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--primary-color);
-  color: white;
-  flex-shrink: 0; /* Prevent header from shrinking */
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .form-header h2 {
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
 }
 
 .close-btn {
-  background: none;
+  background: transparent;
   border: none;
-  color: white;
-  font-size: 1.25rem;
+  color: var(--text-secondary);
   cursor: pointer;
-  width: 32px;
-  height: 32px;
+  font-size: 1.5rem;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -641,180 +443,131 @@ body {
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-form {
-  padding: 1.5rem;
-  flex: 1; /* Allow the form content to grow and take available space */
-  overflow-y: auto; /* Enable scrolling for form fields */
-  padding-bottom: 1rem; /* Add padding at the bottom of the scrollable area */
-  display: flex;
-  flex-direction: column;
-}
-
-.form-group {
-  margin-bottom: 1.25rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: var(--text-color);
-}
-
-.form-group input,
-.form-group textarea {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 1rem;
-  transition: var(--transition);
-}
-
-.form-group input:focus,
-.form-group textarea:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
-}
-
-.form-group textarea {
-  resize: vertical;
-  min-height: 80px;
-}
-
-.password-input-group {
-  position: relative;
-  display: flex;
-}
-
-.password-input-group input {
-  padding-right: 40px;
-}
-
-.generate-btn {
-  position: absolute;
-  right: 0.5rem;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.25rem;
-  color: var(--text-light);
-  transition: var(--transition);
-}
-
-.generate-btn:hover {
-  color: var(--primary-color);
-  transform: translateY(-50%) scale(1.1);
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  transform: scale(1.05);
 }
 
 /* Form Actions */
 .form-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Loading State */
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 1rem;
-  margin-top: auto; /* Pushes actions to the bottom within the form flex container */
-  padding: 1.5rem; /* Padding around the buttons */
-  border-top: 1px solid var(--border-color); /* Separator */
-  background: white; /* Ensure background is solid */
-  flex-shrink: 0; /* Prevents shrinking */
+  padding: 2rem;
+  color: var(--text-secondary);
 }
 
-.cancel-btn,
-.save-btn {
-  padding: 0.75rem 1.5rem;
-  border-radius: 6px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: var(--transition);
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
-.cancel-btn {
-  background: none;
-  border: 1px solid var(--border-color);
-  color: var(--text-light);
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.cancel-btn:hover {
-  background: var(--bg-secondary);
-  color: var(--text-color);
+/* Empty State */
+.no-results {
+  display: flex;
+  justify-content: center;
+  padding: 3rem 0;
 }
 
-.save-btn {
-  background: var(--primary-color);
-  color: white;
-  border: none;
+.empty-state {
+  text-align: center;
+  max-width: 400px;
 }
 
-.save-btn:hover {
-  background: var(--primary-hover);
+.empty-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
 }
 
-/* Animations */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+.empty-state h3 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
 }
 
-@keyframes slideInFromRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+.empty-state p {
+  color: var(--text-secondary);
+  opacity: 0.8;
 }
 
-.results-list {
-  animation: fadeIn 0.3s ease-out;
+/* Error Messages */
+.error-message {
+  color: var(--danger);
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
 }
 
-/* Responsive Design */
-@media (max-width: 600px) {
-  /* Minimal adjustments needed as the app is already full screen */
+.error-message.small {
+  font-size: 0.8rem;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
   .app {
-    padding: 0.5rem; /* Slightly less padding on very small screens */
+    padding: 15px;
   }
-  
+
+  .app:has(.form-container) {
+    padding: 0;
+  }
+
+  .auth-container {
+    padding: 1.5rem;
+  }
+
+  .form-container {
+    padding: 2rem 1.5rem;
+    width: 100vw;
+    min-height: 100vh;
+    margin: 0;
+  }
+
+  .entry-form {
+    max-width: 100%;
+  }
+
+  .form-header h2 {
+    font-size: 1.5rem;
+  }
+
   .result-item {
-    padding: 0.75rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
   }
-  
+
   .entry-actions {
-    opacity: 1; /* Always show actions on mobile */
-    flex-wrap: wrap; /* Allow actions to wrap if needed */
-    justify-content: flex-end; /* Align actions to the end on mobile */
-  }
-  
-  .action-btn {
-    width: auto; /* Allow buttons to size to content */
-    height: auto;
-    padding: 8px; /* More finger-friendly tap target */
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .shortcuts {
-    font-size: 0.7rem;
-    gap: 0.5rem;
+    gap: 1rem;
+    padding: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
   }
-  
-  .form-header {
-    padding: 0.75rem 1rem; /* Adjust padding for form header */
-  }
-
-  form {
-    padding: 1rem; /* Adjust form padding for smaller screens */
-  }
-
-  .form-actions {
-    padding: 1rem; /* Adjust form actions padding for smaller screens */
-  }
-}
-
-/* Accessibility Focus Styles */
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 2px;
 }
