@@ -1,17 +1,27 @@
-use serde_json;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::ShortcutState;
 
+#[cfg(target_os = "macos")]
+use core_graphics::event::{CGEvent, CGEventTapLocation};
+
+// macOS NSPanel imports
+#[cfg(target_os = "macos")]
+use objc2::msg_send;
+#[cfg(target_os = "macos")]
+use objc2::runtime::AnyObject;
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{NSFloatingWindowLevel, NSWindowCollectionBehavior};
+
 // Add input simulation dependencies
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_TAB};
-#[cfg(target_os = "macos")]
-use core_graphics::event::{CGEvent, CGEventTapLocation};
+
 #[cfg(target_os = "linux")]
 use x11::xlib;
 
@@ -25,7 +35,7 @@ use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::{engine::general_purpose, Engine as _};
 
-// Security-enhanced structures
+// Security-enhanced structures (keeping your existing structures)
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct PasswordEntry {
     id: u32,
@@ -41,11 +51,11 @@ struct PasswordEntry {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct EncryptedPasswordStore {
-    encrypted_data: String, // Base64 encoded encrypted JSON
-    nonce: String,          // Base64 encoded nonce
-    salt: String,           // Base64 encoded salt for key derivation
-    iterations: u32,        // PBKDF2 iterations
-    version: u8,            // Schema version for future migrations
+    encrypted_data: String,
+    nonce: String,
+    salt: String,
+    iterations: u32,
+    version: u8,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -67,7 +77,412 @@ impl Default for PasswordStore {
     }
 }
 
-// Input simulation functions
+#[derive(Clone)]
+struct FocusState {
+    target_app_pid: Option<u32>,
+    last_active_window: Option<String>,
+}
+
+// Global state for focus management
+lazy_static::lazy_static! {
+    static ref FOCUS_STATE: Arc<Mutex<FocusState>> = Arc::new(Mutex::new(FocusState {
+        target_app_pid: None,
+        last_active_window: None,
+    }));
+}
+
+// Enhanced macOS focus management
+#[cfg(target_os = "macos")]
+fn capture_current_focus() -> Result<(), String> {
+    unsafe {
+        use objc2_app_kit::NSWorkspace;
+
+        let workspace = NSWorkspace::sharedWorkspace();
+        if let Some(front_app) = workspace.frontmostApplication() {
+            let pid = front_app.processIdentifier();
+            let bundle_id = front_app.bundleIdentifier();
+
+            let mut focus_state = FOCUS_STATE.lock().unwrap();
+            focus_state.target_app_pid = Some(pid as u32);
+            focus_state.last_active_window = bundle_id.map(|id| id.to_string());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn restore_target_focus() -> Result<(), String> {
+    unsafe {
+        use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
+
+        let focus_state = FOCUS_STATE.lock().unwrap();
+        if let Some(pid) = focus_state.target_app_pid {
+            if let Some(app) =
+                NSRunningApplication::runningApplicationWithProcessIdentifier(pid as i32)
+            {
+                app.activateWithOptions(NSApplicationActivationOptions(0));
+            }
+        }
+    }
+    Ok(())
+}
+
+// Enhanced window configuration for better Spotlight-like behavior
+#[cfg(target_os = "macos")]
+fn configure_spotlight_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
+    unsafe {
+        let ns_window = window
+            .ns_window()
+            .map_err(|e| format!("Failed to get NSWindow: {}", e))?;
+        let ns_window_ptr = ns_window as *mut AnyObject;
+
+        // Set to highest floating level (above fullscreen apps)
+        let _: () = msg_send![ns_window_ptr, setLevel: NSFloatingWindowLevel + 1];
+
+        // Enhanced collection behavior for Spotlight-like experience
+        let collection_behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::Stationary
+            | NSWindowCollectionBehavior::IgnoresCycle
+            | NSWindowCollectionBehavior::Transient;
+
+        let _: () = msg_send![ns_window_ptr, setCollectionBehavior: collection_behavior.bits()];
+
+        // Basic window configuration
+        let _: () = msg_send![ns_window_ptr, setMovableByWindowBackground: true];
+        let _: () = msg_send![ns_window_ptr, setAcceptsMouseMovedEvents: true];
+        let _: () = msg_send![ns_window_ptr, setHidesOnDeactivate: false];
+    }
+    Ok(())
+}
+
+// Enhanced typing simulation with focus preservation
+#[cfg(target_os = "macos")]
+fn simulate_typing_with_focus_restore(text: &str) -> Result<(), String> {
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    // Restore focus to target application first
+    restore_target_focus()?;
+
+    // Small delay to ensure target application regains focus
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Failed to create event source")?;
+
+    for ch in text.chars() {
+        if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 0, true) {
+            event.set_string_from_utf16_unchecked(&[ch as u16]);
+            event.post(CGEventTapLocation::HID);
+            std::thread::sleep(std::time::Duration::from_millis(15));
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn simulate_enter() -> Result<(), String> {
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Failed to create event source")?;
+
+    // Enter key press (keycode 36 on macOS)
+    if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 36, true) {
+        event.post(CGEventTapLocation::HID);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Enter key release
+        if let Ok(event_up) = CGEvent::new_keyboard_event(source, 36, false) {
+            event_up.post(CGEventTapLocation::HID);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn simulate_enter() -> Result<(), String> {
+    use winapi::um::winuser::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_RETURN};
+
+    let mut input_down = INPUT {
+        type_: INPUT_KEYBOARD,
+        u: unsafe { std::mem::zeroed() },
+    };
+
+    let mut input_up = INPUT {
+        type_: INPUT_KEYBOARD,
+        u: unsafe { std::mem::zeroed() },
+    };
+
+    unsafe {
+        // Enter key down
+        input_down.u.ki_mut().wVk = VK_RETURN as u16;
+        input_down.u.ki_mut().dwFlags = 0;
+
+        // Enter key up
+        input_up.u.ki_mut().wVk = VK_RETURN as u16;
+        input_up.u.ki_mut().dwFlags = KEYEVENTF_KEYUP;
+
+        if SendInput(1, &mut input_down, std::mem::size_of::<INPUT>() as i32) != 1 {
+            return Err("Failed to send enter key down".to_string());
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        if SendInput(1, &mut input_up, std::mem::size_of::<INPUT>() as i32) != 1 {
+            return Err("Failed to send enter key up".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn simulate_enter() -> Result<(), String> {
+    use std::ptr;
+
+    unsafe {
+        let display = x11::xlib::XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return Err("Failed to open X11 display".to_string());
+        }
+
+        let enter_keycode = 36; // Enter key on most X11 systems
+
+        // Key press
+        let mut event: x11::xlib::XKeyEvent = std::mem::zeroed();
+        event.type_ = x11::xlib::KeyPress;
+        event.display = display;
+        event.keycode = enter_keycode;
+        event.state = 0;
+
+        x11::xlib::XSendEvent(
+            display,
+            x11::xlib::PointerWindow,
+            x11::xlib::True,
+            x11::xlib::KeyPressMask,
+            &mut event as *mut _ as *mut x11::xlib::XEvent,
+        );
+
+        // Key release
+        event.type_ = x11::xlib::KeyRelease;
+        x11::xlib::XSendEvent(
+            display,
+            x11::xlib::PointerWindow,
+            x11::xlib::True,
+            x11::xlib::KeyReleaseMask,
+            &mut event as *mut _ as *mut x11::xlib::XEvent,
+        );
+
+        x11::xlib::XFlush(display);
+        x11::xlib::XCloseDisplay(display);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn auto_fill_and_login_spotlight(
+    entry_id: u32,
+    master_password: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
+
+    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
+        // Hide Cocoon window
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.hide();
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // Restore focus to target application
+            restore_target_focus()?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+
+            // Type credentials and login
+            simulate_typing_with_focus_restore(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing_with_focus_restore(&entry.password)?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            simulate_enter()?; // Press Enter to login
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            simulate_typing(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing(&entry.password)?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            simulate_enter()?; // Press Enter to login
+        }
+    } else {
+        return Err("Entry not found".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn press_enter_after_autofill(_app_handle: tauri::AppHandle) -> Result<(), String> {
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    
+    simulate_enter()?;
+    
+    Ok(())
+}
+
+// Enhanced commands with better focus management
+#[tauri::command]
+async fn type_username_spotlight(
+    entry_id: u32,
+    master_password: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
+
+    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
+        // Hide Cocoon window
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.hide();
+        }
+
+        // Type with focus restoration
+        #[cfg(target_os = "macos")]
+        simulate_typing_with_focus_restore(&entry.username)?;
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            simulate_typing(&entry.username)?;
+        }
+    } else {
+        return Err("Entry not found".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn type_password_spotlight(
+    entry_id: u32,
+    master_password: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
+
+    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
+        // Hide Cocoon window
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.hide();
+        }
+
+        // Type with focus restoration
+        #[cfg(target_os = "macos")]
+        simulate_typing_with_focus_restore(&entry.password)?;
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            simulate_typing(&entry.password)?;
+        }
+    } else {
+        return Err("Entry not found".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn auto_fill_credentials_spotlight(
+    entry_id: u32,
+    master_password: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let store = load_password_store(&master_password)?;
+
+    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
+        // Hide Cocoon window
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.hide();
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // Restore focus to target application
+            restore_target_focus()?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+
+            // Type credentials
+            simulate_typing_with_focus_restore(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing_with_focus_restore(&entry.password)?;
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            simulate_typing(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing(&entry.password)?;
+        }
+    } else {
+        return Err("Entry not found".to_string());
+    }
+
+    Ok(())
+}
+
+// Add a command to focus the search input from the frontend
+#[tauri::command]
+async fn focus_search_input(app_handle: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        // Ensure window is key and focused
+        let _ = window.set_focus();
+
+        #[cfg(target_os = "macos")]
+        unsafe {
+            use objc2::msg_send;
+            use objc2::runtime::AnyObject;
+
+            if let Ok(ns_window) = window.ns_window() {
+                let ns_window_ptr = ns_window as *mut AnyObject;
+                let _: () = msg_send![ns_window_ptr, makeKeyAndOrderFront: std::ptr::null_mut::<AnyObject>()];
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn simulate_tab() -> Result<(), String> {
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "Failed to create event source")?;
+
+    // Tab key press
+    if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 48, true) {
+        event.post(CGEventTapLocation::HID);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Tab key release
+        if let Ok(event_up) = CGEvent::new_keyboard_event(source, 48, false) {
+            event_up.post(CGEventTapLocation::HID);
+        }
+    }
+
+    Ok(())
+}
+
+// Windows and Linux implementations (keeping your existing code)
 #[cfg(target_os = "windows")]
 fn simulate_typing(text: &str) -> Result<(), String> {
     use std::ffi::OsStr;
@@ -75,72 +490,88 @@ fn simulate_typing(text: &str) -> Result<(), String> {
     use winapi::um::winuser::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_UNICODE};
 
     let wide_text: Vec<u16> = OsStr::new(text).encode_wide().collect();
-    
+
     for &ch in &wide_text {
         let mut input = INPUT {
             type_: INPUT_KEYBOARD,
-            u: unsafe {
-                std::mem::zeroed()
-            },
+            u: unsafe { std::mem::zeroed() },
         };
-        
+
         unsafe {
             input.u.ki_mut().wVk = 0;
             input.u.ki_mut().wScan = ch;
             input.u.ki_mut().dwFlags = KEYEVENTF_UNICODE;
             input.u.ki_mut().time = 0;
             input.u.ki_mut().dwExtraInfo = 0;
-            
+
             if SendInput(1, &mut input, std::mem::size_of::<INPUT>() as i32) != 1 {
                 return Err("Failed to send input".to_string());
             }
         }
-        
+
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    
+
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn simulate_typing(text: &str) -> Result<(), String> {
-    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-    
-    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-        .map_err(|_| "Failed to create event source")?;
-    
-    for ch in text.chars() {
-        if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 0, true) {
-            event.set_string_from_utf16_unchecked(&[ch as u16]);
-            event.post(CGEventTapLocation::HID);
-            std::thread::sleep(std::time::Duration::from_millis(10));
+#[cfg(target_os = "windows")]
+fn simulate_tab() -> Result<(), String> {
+    use winapi::um::winuser::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_TAB};
+
+    let mut input_down = INPUT {
+        type_: INPUT_KEYBOARD,
+        u: unsafe { std::mem::zeroed() },
+    };
+
+    let mut input_up = INPUT {
+        type_: INPUT_KEYBOARD,
+        u: unsafe { std::mem::zeroed() },
+    };
+
+    unsafe {
+        // Tab key down
+        input_down.u.ki_mut().wVk = VK_TAB as u16;
+        input_down.u.ki_mut().dwFlags = 0;
+
+        // Tab key up
+        input_up.u.ki_mut().wVk = VK_TAB as u16;
+        input_up.u.ki_mut().dwFlags = KEYEVENTF_KEYUP;
+
+        if SendInput(1, &mut input_down, std::mem::size_of::<INPUT>() as i32) != 1 {
+            return Err("Failed to send tab key down".to_string());
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        if SendInput(1, &mut input_up, std::mem::size_of::<INPUT>() as i32) != 1 {
+            return Err("Failed to send tab key up".to_string());
         }
     }
-    
+
     Ok(())
 }
 
 #[cfg(target_os = "linux")]
 fn simulate_typing(text: &str) -> Result<(), String> {
-    use std::ffi::CString;
     use std::ptr;
-    
+
     unsafe {
         let display = x11::xlib::XOpenDisplay(ptr::null());
         if display.is_null() {
             return Err("Failed to open X11 display".to_string());
         }
-        
+
         for ch in text.chars() {
             let keycode = ch as u32;
-            
+
             // Key press
             let mut event: x11::xlib::XKeyEvent = std::mem::zeroed();
             event.type_ = x11::xlib::KeyPress;
             event.display = display;
             event.keycode = keycode;
             event.state = 0;
-            
+
             x11::xlib::XSendEvent(
                 display,
                 x11::xlib::PointerWindow,
@@ -148,7 +579,7 @@ fn simulate_typing(text: &str) -> Result<(), String> {
                 x11::xlib::KeyPressMask,
                 &mut event as *mut _ as *mut x11::xlib::XEvent,
             );
-            
+
             // Key release
             event.type_ = x11::xlib::KeyRelease;
             x11::xlib::XSendEvent(
@@ -158,80 +589,36 @@ fn simulate_typing(text: &str) -> Result<(), String> {
                 x11::xlib::KeyReleaseMask,
                 &mut event as *mut _ as *mut x11::xlib::XEvent,
             );
-            
+
             x11::xlib::XFlush(display);
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        
+
         x11::xlib::XCloseDisplay(display);
     }
-    
-    Ok(())
-}
 
-#[cfg(target_os = "windows")]
-fn simulate_tab() -> Result<(), String> {
-    use winapi::um::winuser::{SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_TAB};
-    
-    let mut inputs = [INPUT {
-        type_: INPUT_KEYBOARD,
-        u: unsafe { std::mem::zeroed() },
-    }; 2];
-    
-    unsafe {
-        // Tab key down
-        inputs[0].u.ki_mut().wVk = VK_TAB as u16;
-        inputs[0].u.ki_mut().dwFlags = 0;
-        
-        // Tab key up
-        inputs[1].u.ki_mut().wVk = VK_TAB as u16;
-        inputs[1].u.ki_mut().dwFlags = KEYEVENTF_KEYUP;
-        
-        if SendInput(2, inputs.as_mut_ptr(), std::mem::size_of::<INPUT>() as i32) != 2 {
-            return Err("Failed to send tab input".to_string());
-        }
-    }
-    
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn simulate_tab() -> Result<(), String> {
-    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-    
-    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-        .map_err(|_| "Failed to create event source")?;
-    
-    if let Ok(event) = CGEvent::new_keyboard_event(source.clone(), 48, true) {
-        event.post(CGEventTapLocation::HID);
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        
-        if let Ok(event_up) = CGEvent::new_keyboard_event(source, 48, false) {
-            event_up.post(CGEventTapLocation::HID);
-        }
-    }
-    
     Ok(())
 }
 
 #[cfg(target_os = "linux")]
 fn simulate_tab() -> Result<(), String> {
     use std::ptr;
-    
+
     unsafe {
         let display = x11::xlib::XOpenDisplay(ptr::null());
         if display.is_null() {
             return Err("Failed to open X11 display".to_string());
         }
-        
-        let tab_keycode = 23; // Tab keycode on most Linux systems
-        
-        // Tab key press
+
+        let tab_keycode = 23; // Tab key on most X11 systems
+
+        // Key press
         let mut event: x11::xlib::XKeyEvent = std::mem::zeroed();
         event.type_ = x11::xlib::KeyPress;
         event.display = display;
         event.keycode = tab_keycode;
-        
+        event.state = 0;
+
         x11::xlib::XSendEvent(
             display,
             x11::xlib::PointerWindow,
@@ -239,8 +626,8 @@ fn simulate_tab() -> Result<(), String> {
             x11::xlib::KeyPressMask,
             &mut event as *mut _ as *mut x11::xlib::XEvent,
         );
-        
-        // Tab key release
+
+        // Key release
         event.type_ = x11::xlib::KeyRelease;
         x11::xlib::XSendEvent(
             display,
@@ -249,12 +636,31 @@ fn simulate_tab() -> Result<(), String> {
             x11::xlib::KeyReleaseMask,
             &mut event as *mut _ as *mut x11::xlib::XEvent,
         );
-        
+
         x11::xlib::XFlush(display);
         x11::xlib::XCloseDisplay(display);
     }
-    
+
     Ok(())
+}
+
+fn get_data_file_path() -> Result<PathBuf, String> {
+    let app_data_dir = dirs::data_dir()
+        .ok_or("Could not find data directory")?
+        .join("cocoon-password-manager");
+
+    fs::create_dir_all(&app_data_dir)
+        .map_err(|e| format!("Failed to create data directory: {}", e))?;
+
+    Ok(app_data_dir.join("vault.cocoon"))
+}
+
+fn get_master_hash_path() -> Result<PathBuf, String> {
+    let app_data_dir = dirs::data_dir()
+        .ok_or("Could not find data directory")?
+        .join("cocoon-password-manager");
+
+    Ok(app_data_dir.join("master.hash"))
 }
 
 // Security utility functions (keeping existing functions)
@@ -301,81 +707,6 @@ fn decrypt_data(encrypted_data: &str, nonce: &str, key: &[u8]) -> Result<String,
         .map_err(|e| format!("Decryption failed: {}", e))?;
 
     String::from_utf8(plaintext).map_err(|e| format!("Invalid UTF-8 in decrypted data: {}", e))
-}
-
-fn calculate_password_strength(password: &str) -> u8 {
-    let mut score = 0u8;
-
-    // Length scoring
-    if password.len() >= 8 {
-        score += 20;
-    }
-    if password.len() >= 12 {
-        score += 15;
-    }
-    if password.len() >= 16 {
-        score += 10;
-    }
-
-    // Character variety
-    if password.chars().any(|c| c.is_ascii_lowercase()) {
-        score += 5;
-    }
-    if password.chars().any(|c| c.is_ascii_uppercase()) {
-        score += 5;
-    }
-    if password.chars().any(|c| c.is_ascii_digit()) {
-        score += 5;
-    }
-    if password
-        .chars()
-        .any(|c| "!@#$%^&*()_+-=[]{}|;:,.<>?".contains(c))
-    {
-        score += 10;
-    }
-
-    // Complexity bonus
-    let unique_chars = password
-        .chars()
-        .collect::<std::collections::HashSet<_>>()
-        .len();
-    if unique_chars > password.len() / 2 {
-        score += 10;
-    }
-
-    // Penalty for common patterns
-    if password.to_lowercase().contains("password")
-        || password.to_lowercase().contains("123456")
-        || password
-            .chars()
-            .collect::<Vec<_>>()
-            .windows(3)
-            .any(|w| w[0] == w[1] && w[1] == w[2])
-    {
-        score = score.saturating_sub(20);
-    }
-
-    score.min(100)
-}
-
-// File system functions (keeping existing functions)
-fn get_data_file_path() -> Result<PathBuf, String> {
-    let app_data_dir = dirs::data_dir()
-        .ok_or("Could not find data directory")?
-        .join("cocoon-password-manager");
-
-    fs::create_dir_all(&app_data_dir)
-        .map_err(|e| format!("Failed to create data directory: {}", e))?;
-
-    Ok(app_data_dir.join("vault.cocoon"))
-}
-
-fn get_master_hash_path() -> Result<PathBuf, String> {
-    let app_data_dir = dirs::data_dir()
-        .ok_or("Could not find data directory")?
-        .join("cocoon-password-manager");
-
-    Ok(app_data_dir.join("master.hash"))
 }
 
 // Authentication functions (keeping existing functions)
@@ -506,26 +837,109 @@ fn save_password_store(store: &PasswordStore, master_password: &str) -> Result<(
     save_encrypted_store(&encrypted_store)
 }
 
-// MODIFIED COMMANDS FOR DIRECT INPUT
+fn calculate_password_strength(password: &str) -> u8 {
+    let mut score = 0u8;
+
+    // Length scoring
+    if password.len() >= 8 {
+        score += 20;
+    }
+    if password.len() >= 12 {
+        score += 15;
+    }
+    if password.len() >= 16 {
+        score += 10;
+    }
+
+    // Character variety
+    if password.chars().any(|c| c.is_ascii_lowercase()) {
+        score += 5;
+    }
+    if password.chars().any(|c| c.is_ascii_uppercase()) {
+        score += 5;
+    }
+    if password.chars().any(|c| c.is_ascii_digit()) {
+        score += 5;
+    }
+    if password
+        .chars()
+        .any(|c| "!@#$%^&*()_+-=[]{}|;:,.<>?".contains(c))
+    {
+        score += 10;
+    }
+
+    // Complexity bonus
+    let unique_chars = password
+        .chars()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    if unique_chars > password.len() / 2 {
+        score += 10;
+    }
+
+    // Penalty for common patterns
+    if password.to_lowercase().contains("password")
+        || password.to_lowercase().contains("123456")
+        || password
+            .chars()
+            .collect::<Vec<_>>()
+            .windows(3)
+            .any(|w| w[0] == w[1] && w[1] == w[2])
+    {
+        score = score.saturating_sub(20);
+    }
+
+    score.min(100)
+}
+
 #[tauri::command]
-async fn type_username(
+async fn auto_fill_credentials_spotlight_with_login(
     entry_id: u32,
     master_password: String,
+    press_enter: bool,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let store = load_password_store(&master_password)?;
 
     if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
-        // Hide the window first
+        // Hide Cocoon window
         if let Some(window) = app_handle.get_webview_window("main") {
             let _ = window.hide();
         }
 
-        // Small delay to allow focus to return to target application
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        #[cfg(target_os = "macos")]
+        {
+            // Restore focus to target application
+            restore_target_focus()?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
 
-        // Type the username directly
-        simulate_typing(&entry.username)?;
+            // Type credentials
+            simulate_typing_with_focus_restore(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing_with_focus_restore(&entry.password)?;
+            
+            // Optionally press Enter to login
+            if press_enter {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                simulate_enter()?;
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            simulate_typing(&entry.username)?;
+            simulate_tab()?;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            simulate_typing(&entry.password)?;
+            
+            // Optionally press Enter to login
+            if press_enter {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                simulate_enter()?;
+            }
+        }
     } else {
         return Err("Entry not found".to_string());
     }
@@ -533,68 +947,6 @@ async fn type_username(
     Ok(())
 }
 
-#[tauri::command]
-async fn type_password(
-    entry_id: u32,
-    master_password: String,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let store = load_password_store(&master_password)?;
-
-    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
-        // Hide the window first
-        if let Some(window) = app_handle.get_webview_window("main") {
-            let _ = window.hide();
-        }
-
-        // Small delay to allow focus to return to target application
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-
-        // Type the password directly
-        simulate_typing(&entry.password)?;
-    } else {
-        return Err("Entry not found".to_string());
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn auto_fill_credentials(
-    entry_id: u32,
-    master_password: String,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let store = load_password_store(&master_password)?;
-
-    if let Some(entry) = store.entries.iter().find(|e| e.id == entry_id) {
-        // Hide the window first
-        if let Some(window) = app_handle.get_webview_window("main") {
-            let _ = window.hide();
-        }
-
-        // Small delay to allow focus to return to target application
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        // Type username
-        simulate_typing(&entry.username)?;
-        
-        // Tab to password field
-        simulate_tab()?;
-        
-        // Small delay
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
-        // Type password
-        simulate_typing(&entry.password)?;
-    } else {
-        return Err("Entry not found".to_string());
-    }
-
-    Ok(())
-}
-
-// Keep existing commands (search_entries, add_entry, update_entry, delete_entry, etc.)
 #[tauri::command(async)]
 async fn search_entries(
     query: String,
@@ -710,6 +1062,14 @@ async fn get_entry_by_id(id: u32, master_password: String) -> Result<PasswordEnt
 }
 
 #[tauri::command]
+async fn hide_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn generate_password(
     length: usize,
     include_uppercase: bool,
@@ -777,6 +1137,7 @@ async fn export_vault(export_password: String, master_password: String) -> Resul
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -790,12 +1151,17 @@ pub fn run() {
             add_entry,
             update_entry,
             delete_entry,
-            type_username,
-            type_password,
-            auto_fill_credentials,
+            type_username_spotlight,
+            type_password_spotlight,
+            auto_fill_credentials_spotlight,
             generate_password,
             get_entry_by_id,
-            export_vault
+            export_vault,
+            hide_window,
+    auto_fill_and_login_spotlight,
+    press_enter_after_autofill,
+    auto_fill_credentials_spotlight_with_login,
+            focus_search_input
         ])
         .setup(|app| {
             // Create tray icon
@@ -807,12 +1173,10 @@ pub fn run() {
                     .build(app)?;
             }
 
-            // Setup global shortcut
+            // Setup enhanced global shortcut with focus capture
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
-
-                // let shortcut = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyP);
                 let shortcut = Shortcut::new(Some(Modifiers::CONTROL), Code::KeyP);
 
                 app.handle().plugin(
@@ -822,9 +1186,45 @@ pub fn run() {
                                 match event.state() {
                                     ShortcutState::Pressed => {
                                         if let Some(window) = _app.get_webview_window("main") {
-                                            let _ = window.show();
-                                            let _ = window.set_focus();
-                                            let _ = window.center();
+                                            let is_visible = window.is_visible().unwrap_or(false);
+
+                                            if is_visible {
+                                                // Hide like Spotlight
+                                                let _ = window.hide();
+                                            } else {
+                                                // Capture current focus before showing Cocoon
+                                                #[cfg(target_os = "macos")]
+                                                let _ = capture_current_focus();
+
+                                                // Configure as Spotlight-like panel
+                                                #[cfg(target_os = "macos")]
+                                                {
+                                                    if let Err(e) = configure_spotlight_panel(&window) {
+                                                        eprintln!("Failed to configure Spotlight panel: {}", e);
+                                                    }
+                                                }
+
+                                                // Show and position like Spotlight
+                                                let _ = window.show();
+                                                let _ = window.center();
+                                                let _ = window.set_focus();
+
+                                                #[cfg(target_os = "macos")]
+                                                unsafe {
+                                                    use objc2::runtime::AnyObject;
+                                                    use objc2::msg_send;
+
+                                                    if let Ok(ns_window) = window.ns_window() {
+                                                        let ns_window_ptr = ns_window as *mut AnyObject;
+
+                                                        // Make key window like Spotlight
+                                                        let _: () = msg_send![ns_window_ptr, makeKeyAndOrderFront: std::ptr::null_mut::<AnyObject>()];
+                                                    }
+                                                }
+
+                                                // Focus search input
+                                                let _ = window.emit("focus-search-input", ());
+                                            }
                                         }
                                     }
                                     ShortcutState::Released => {}
@@ -840,6 +1240,14 @@ pub fn run() {
             // Configure main window
             #[cfg(desktop)]
             if let Some(window) = app.get_webview_window("main") {
+                // Configure as Spotlight-like panel on macOS
+                #[cfg(target_os = "macos")]
+                {
+                    if let Err(e) = configure_spotlight_panel(&window) {
+                        eprintln!("Failed to configure Spotlight panel: {}", e);
+                    }
+                }
+
                 let _ = window.hide();
             }
 
@@ -862,22 +1270,38 @@ pub fn run() {
             RunEvent::WindowEvent { label, event, .. } => match event {
                 WindowEvent::Focused(focused) => {
                     if !focused {
+                        // Spotlight-like behavior: hide when losing focus
                         if let Some(window) = app_handle.get_webview_window(&label) {
-                            let _ = window.hide();
+                            let window_clone = window.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(100));
+                                if !window_clone.is_focused().unwrap_or(false) {
+                                    let _ = window_clone.hide();
+                                }
+                            });
                         }
+                    }
+                }
+                WindowEvent::CloseRequested { api, .. } => {
+                    // Prevent closing, just hide
+                    api.prevent_close();
+                    if let Some(window) = app_handle.get_webview_window(&label) {
+                        let _ = window.hide();
                     }
                 }
                 _ => {}
             },
-            RunEvent::TrayIconEvent(event) =>
-            {
+            RunEvent::TrayIconEvent(event) => {
                 #[cfg(desktop)]
                 match event {
                     TrayIconEvent::Click { .. } => {
                         if let Some(window) = app_handle.get_webview_window("main") {
+                            #[cfg(target_os = "macos")]
+                            let _ = capture_current_focus();
                             let _ = window.show();
                             let _ = window.set_focus();
                             let _ = window.center();
+                            let _ = window.emit("focus-search-input", ());
                         }
                     }
                     _ => {}
