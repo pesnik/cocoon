@@ -57,6 +57,7 @@ body::before {
   background: rgba(255, 255, 255, 0.02);
 }
 
+/* FIXED: Unified Search Box Design */
 .search-box {
   position: relative;
   display: flex;
@@ -69,6 +70,7 @@ body::before {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 12px; /* Add consistent spacing */
 }
 
 .search-box:focus-within {
@@ -82,11 +84,12 @@ body::before {
 
 .search-icon {
   font-size: 20px;
-  margin-right: 12px;
   opacity: 0.8;
+  flex-shrink: 0;
 }
 
-.search-input {
+/* FIXED: Search input now seamlessly blends with parent - overrides spotlight-input */
+.search-input.spotlight-input {
   flex: 1;
   background: transparent !important;
   border: none !important;
@@ -96,6 +99,38 @@ body::before {
   font-weight: 400;
   letter-spacing: 0.02em;
   box-shadow: none !important;
+  padding: 0 !important; /* Remove padding since parent handles it */
+  border-radius: 0 !important; /* Remove any border radius */
+  appearance: none !important; /* Remove all native browser styling */
+  -webkit-appearance: none !important; /* Remove webkit browser styling */
+  -moz-appearance: none !important; /* Remove firefox browser styling */
+  margin: 0 !important;
+  min-width: 0 !important;
+  backdrop-filter: none !important; /* Remove any backdrop filter from spotlight-input */
+  -webkit-backdrop-filter: none !important;
+  transform: none !important; /* Remove any transform effects */
+  transition: none !important; /* Remove transitions that might show the box */
+}
+
+/* Remove any selection styling on the search input */
+.search-input.spotlight-input::selection {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+/* Remove focus ring and any default browser styling - with higher specificity */
+.search-input.spotlight-input:focus {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transform: none !important;
+  transition: none !important;
 }
 
 .search-input::placeholder {
@@ -103,10 +138,11 @@ body::before {
   font-weight: 300;
 }
 
+/* FIXED: Add button now seamlessly integrated */
 .add-btn, .icon-btn {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08) !important; /* Subtle differentiation */
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 10px;
   color: #ffffff;
   padding: 8px 12px;
   cursor: pointer;
@@ -117,13 +153,21 @@ body::before {
   justify-content: center;
   min-width: 40px;
   height: 40px;
+  flex-shrink: 0;
 }
 
 .add-btn:hover, .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* When search box is focused, make buttons even more subtle */
+.search-box:focus-within .add-btn,
+.search-box:focus-within .icon-btn {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 /* Shortcuts Bar */
