@@ -841,9 +841,8 @@ function App() {
             {entries.map((entry, index) => (
               <div
                 key={entry.id}
-                className={`result-item ${
-                  index === selectedIndex ? "selected" : ""
-                }`}
+                className={`result-item ${index === selectedIndex ? "selected" : ""
+                  }`}
                 onClick={() => autoFillCredentials(entry.id)}
                 onMouseEnter={() => setSelectedIndex(index)}
               >

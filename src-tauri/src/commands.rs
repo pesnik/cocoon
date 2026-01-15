@@ -660,6 +660,9 @@ fn get_master_hash_path() -> Result<PathBuf, String> {
         .ok_or("Could not find data directory")?
         .join("cocoon-password-manager");
 
+    fs::create_dir_all(&app_data_dir)
+        .map_err(|e| format!("Failed to create data directory: {}", e))?;
+
     Ok(app_data_dir.join("master.hash"))
 }
 
@@ -1046,12 +1049,12 @@ async fn delete_entry(id: u32, master_password: String) -> Result<(), String> {
         save_password_store(&store, &master_password)?;
         Ok(())
     } else {
-        Err("Entry not found".to_string())
+    Err("Entry not found".to_string())
     }
 }
 
 #[tauri::command]
-async fn get_entry_by_id(id: u32, master_password: String) -> Result<PasswordEntry, String> {
+fn get_entry_by_id(id: u32, master_password: String) -> Result<PasswordEntry, String> {
     let store = load_password_store(&master_password)?;
 
     store
